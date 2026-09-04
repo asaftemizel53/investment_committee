@@ -1,0 +1,30 @@
+# Ortam degiskenleri / sirlar
+.env
+.env.local
+.env.*.local
+.env.keys
+.envnano.save
+*.env.save
+
+# Veritabani (WAL modu sidecar dosyalari dahil)
+data.sqlite
+data.sqlite-shm
+data.sqlite-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# Kalici uygulama verisi
+memory.json
+triggers.json
+server-log.txt
+
+# Bagimliliklar
+node_modules/
+
+# Yedek / gecici dosyalar
+*.backup
+*.bak
+
+# OS
+.DS_Store

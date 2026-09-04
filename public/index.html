@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Yatırım Komitesi</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#080808;color:#e0e0e0;padding:20px;min-height:100vh}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #161616}
+h1{font-size:15px;font-weight:500;color:#fff}
+.date{font-size:11px;color:#3a3a3a}
+.tabs{display:flex;gap:3px;margin-bottom:14px}
+.tab{font-size:12px;padding:5px 13px;border:1px solid #181818;border-radius:5px;background:transparent;color:#444;cursor:pointer;transition:all .12s}
+.tab.active{background:#111;color:#ddd;border-color:#2a2a2a}
+.tab:hover:not(.active){color:#777}
+.hidden{display:none}
+.midas-strip{display:flex;align-items:center;justify-content:space-between;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:7px;padding:8px 12px;margin-bottom:12px;font-size:11.5px;color:#555}
+.midas-strip .ms-name{color:#4ecca3;font-weight:500}
+.midas-strip .ms-pnl.green{color:#4ecca3}.midas-strip .ms-pnl.red{color:#f97316}
+.phase-bar{display:flex;gap:2px;margin-bottom:12px;background:#0d0d0d;border-radius:7px;padding:3px;border:1px solid #161616}
+.phase-step{flex:1;text-align:center;font-size:10px;padding:5px 2px;border-radius:5px;color:#333;transition:all .2s;white-space:nowrap}
+.phase-step.active{background:#141414;color:#ccc}
+.phase-step.done{color:#2a6a2a}
+.news-panel{background:#0a0a0a;border:1px solid #161616;border-radius:8px;padding:12px;margin-bottom:10px}
+.news-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.news-title{font-size:11px;color:#444;font-weight:500;text-transform:uppercase;letter-spacing:.4px}
+.news-status{font-size:10px;color:#2a5a2a;background:#0a1a0a;padding:2px 8px;border-radius:999px}
+.news-status.loading{color:#5a5a2a;background:#1a1a0a}
+.news-status.error{color:#5a2a2a;background:#1a0a0a}
+.news-list{display:flex;flex-direction:column;gap:5px}
+.news-item{background:#0f0f0f;border-radius:5px;padding:7px 10px;border-left:2px solid #1a2a1a}
+.news-item-title{font-size:11.5px;color:#ccc;line-height:1.4;margin-bottom:2px}
+.news-item-meta{font-size:10px;color:#333}
+.news-empty{font-size:11px;color:#2a2a2a;text-align:center;padding:10px}
+.news-search{display:flex;gap:6px;margin-bottom:8px}
+.news-input{flex:1;background:#0f0f0f;border:1px solid #1e1e1e;border-radius:5px;color:#ddd;font-size:12px;padding:5px 9px;font-family:inherit}
+.news-input:focus{outline:none;border-color:#2a2a2a}
+.news-fetch-btn{font-size:11px;padding:5px 11px;border:1px solid #1e1e1e;border-radius:5px;background:#111;color:#aaa;cursor:pointer}
+.news-fetch-btn:hover{background:#161616}
+.chat{background:#0a0a0a;border:1px solid #161616;border-radius:10px;height:600px;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;margin-bottom:10px}
+.msg{display:flex;flex-direction:column;gap:4px}
+.msg-header{display:flex;align-items:center;gap:7px}
+.badge{font-size:10px;font-weight:600;padding:2px 9px;border-radius:999px;letter-spacing:.2px}
+.b-claude{background:#1a163a;color:#9b91f5}
+.b-gpt{background:#0a2a1c;color:#4ecca3}
+.b-gemini{background:#2a1200;color:#f97316}
+.b-user{background:#161616;color:#555}
+.b-sys{background:#0d0d0d;color:#333}
+.b-consensus{background:#0a1a2a;color:#4a9acf}
+.time{font-size:10px;color:#2a2a2a}
+.role-tag{font-size:10px;color:#333;font-style:italic}
+.body{font-size:12.5px;line-height:1.65;background:#0f0f0f;padding:10px 13px;border-radius:7px;border-left:2px solid #1a1a1a;white-space:pre-wrap}
+.body.claude{border-left-color:#5a4fcc}
+.body.gpt{border-left-color:#3aaa8a}
+.body.gemini{border-left-color:#cc6a20}
+.body.consensus{border-left-color:#3a7aaf;background:#0a0f16}
+.body.sys{border-left-color:#1a1a1a;color:#444;font-size:11.5px}
+.dots{display:flex;gap:4px;padding:10px 13px;background:#0f0f0f;border-radius:7px;border-left:2px solid #1a1a1a}
+.dot{width:5px;height:5px;border-radius:50%;background:#2a2a2a;animation:pulse 1.3s infinite}
+.dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+@keyframes pulse{0%,60%,100%{opacity:.2}30%{opacity:.8}}
+.input-wrap{display:flex;flex-direction:column;gap:6px}
+.input-row{display:flex;gap:7px}
+textarea{flex:1;background:#0a0a0a;border:1px solid #181818;border-radius:7px;color:#ddd;font-size:12.5px;padding:9px 12px;height:54px;resize:none;font-family:inherit;line-height:1.5}
+textarea:focus{outline:none;border-color:#2a2a2a}
+.btn{padding:0 16px;font-size:12px;font-weight:500;border:1px solid #222;border-radius:7px;background:#111;color:#ccc;cursor:pointer;white-space:nowrap;transition:all .12s;height:54px}
+.btn:hover{background:#161616}
+.btn:disabled{opacity:.25;cursor:not-allowed}
+.btn-go{background:#0d1a0d;border-color:#1a2e1a;color:#4ecca3}
+.btn-approve{background:#0a1f0a;border-color:#1a3a1a;color:#5add5a;font-size:13px;padding:10px 24px;width:100%;margin-top:8px;height:auto;border-radius:7px;cursor:pointer;border-width:1px;border-style:solid}
+.btn-approve:hover{background:#0d260d}
+.hint{font-size:11px;color:#2a2a2a;padding:0 2px}
+.section{background:#0a0a0a;border:1px solid #161616;border-radius:10px;padding:14px;margin-bottom:12px}
+.section-title{font-size:11px;color:#444;margin-bottom:10px;font-weight:500;text-transform:uppercase;letter-spacing:.4px}
+.pf-cards{display:flex;gap:8px;margin-bottom:12px}
+.pf-card{flex:1;background:#0f0f0f;border-radius:6px;padding:9px 11px;border:1px solid #161616}
+.pf-label{font-size:10px;color:#333;margin-bottom:3px}
+.pf-value{font-size:15px;font-weight:500;color:#ddd}
+.pf-value.green{color:#4ecca3}.pf-value.red{color:#f97316}
+.positions{display:flex;flex-direction:column;gap:5px}
+.pos-item{display:flex;justify-content:space-between;align-items:center;background:#0f0f0f;border-radius:6px;padding:8px 11px;border:1px solid #161616}
+.pos-left .pos-symbol{font-size:13px;font-weight:600;color:#fff}
+.pos-left .pos-detail{font-size:10px;color:#333;margin-top:1px}
+.pos-right{text-align:right}
+.pos-price{font-size:12px;color:#aaa}
+.pos-pnl{font-size:11px;font-weight:500;margin-top:1px}
+.pos-pnl.green{color:#4ecca3}.pos-pnl.red{color:#f97316}
+.no-pos{font-size:11px;color:#2a2a2a;text-align:center;padding:14px}
+.watch-chips{display:flex;flex-wrap:wrap;gap:6px}
+.watch-chip{font-size:11px;background:#0f0f0f;border:1px solid #1a1a1a;border-radius:999px;padding:4px 11px;color:#888}
+.watch-chip .wc-price{color:#3a3a3a;margin-left:5px}
+.stats-row{display:flex;gap:8px;margin-bottom:12px}
+.stat-card{flex:1;background:#0f0f0f;border:1px solid #161616;border-radius:6px;padding:8px 11px;text-align:center}
+.stat-num{font-size:16px;font-weight:600}
+.stat-num.green{color:#4ecca3}.stat-num.red{color:#f97316}.stat-num.wait{color:#cbb44e}
+.stat-label{font-size:10px;color:#333;margin-top:2px}
+.mem-section-title{font-size:11px;color:#444;margin:14px 0 8px;font-weight:500;text-transform:uppercase;letter-spacing:.4px}
+.mem-item{background:#0f0f0f;border-radius:7px;padding:11px;border:1px solid #161616;margin-bottom:7px;border-left:2px solid #1a3a1a}
+.mem-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.mem-date{font-size:10px;color:#333}
+.mem-topic{font-size:12.5px;color:#ddd;margin-bottom:3px}
+.mem-karar{font-size:11px;color:#4ecca3;white-space:pre-wrap}
+.mem-applied{font-size:10px;color:#555;margin-top:4px}
+.st{font-size:10px;font-weight:600;padding:2px 9px;border-radius:999px}
+.st-applied{background:#0a1f0a;color:#4ecca3}
+.st-rejected{background:#1f0d05;color:#f97316}
+.st-pending{background:#1a180a;color:#cbb44e}
+.dec-line{font-size:12.5px;color:#ddd}
+.dec-line .dec-action-AL{color:#4ecca3;font-weight:600}
+.dec-line .dec-action-SAT{color:#f97316;font-weight:600}
+.dec-line .dec-action-TUT,.dec-line .dec-action-BEKLE{color:#888;font-weight:600}
+.dec-rationale{font-size:11px;color:#555;margin-top:3px;line-height:1.5}
+.no-mem{font-size:11px;color:#2a2a2a;text-align:center;padding:24px}
+</style>
+<script>
+(function() {
+  const _fetch = window.fetch;
+  window.fetch = function(url, opts) {
+    opts = opts || {};
+    opts.headers = opts.headers || {};
+    if (typeof url === 'string' && url.startsWith('/api')) {
+      opts.headers['x-api-key'] = '4adcc35d5d60ade668290ca29faaae9b9aaa47ef6d9fd612db1b2ad98c8f55e9';
+    }
+    return _fetch(url, opts);
+  };
+})();
+</script>
+</head>
+<body>
+
+<div class="header">
+  <h1>Yatırım Komitesi</h1>
+  <span class="date" id="date-display"></span>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('toplanti')">Toplantı</div>
+  <div class="tab" onclick="switchTab('portfoy')">Portföy</div>
+  <div class="tab" onclick="switchTab('hafiza')">Hafıza</div>
+</div>
+
+<div id="tab-toplanti">
+  <div class="midas-strip" id="midas-strip">
+    <span><span class="ms-name">Midas Portföyü</span> · yükleniyor...</span>
+    <span></span>
+  </div>
+
+  <div class="phase-bar">
+    <div class="phase-step active" id="phase-0">Gündem</div>
+    <div class="phase-step" id="phase-1">Analiz</div>
+    <div class="phase-step" id="phase-2">Tartışma</div>
+    <div class="phase-step" id="phase-3">Savunma</div>
+    <div class="phase-step" id="phase-4">Oylama</div>
+    <div class="phase-step" id="phase-5">Uzlaşı</div>
+  </div>
+
+  <div class="news-panel">
+    <div class="news-header">
+      <span class="news-title">Güncel Haberler</span>
+      <span class="news-status hidden" id="news-status">Yüklendi</span>
+    </div>
+    <div class="news-search">
+      <input class="news-input" id="news-query" placeholder="Hisse veya konu ara (örn: NVDA, Apple, AI chips)...">
+      <button class="news-fetch-btn" onclick="fetchNews()">Haberleri Getir</button>
+    </div>
+    <div class="news-list" id="news-list">
+      <div class="news-empty">Toplantı konusunu yazıp "Haberleri Getir"e basın. Haberler analistlere otomatik iletilecek.</div>
+    </div>
+  </div>
+
+  <div class="chat" id="chat">
+    <div class="msg">
+      <div class="msg-header"><span class="badge b-sys">Sistem</span></div>
+      <div class="body sys">Yatırım Komitesi hazır. Güncel haberleri getirin, ardından toplantıyı başlatın. Komite gerçek Midas portföyünüzü ve izleme listenizi görüyor.</div>
+    </div>
+  </div>
+
+  <div class="input-wrap">
+    <div class="hint" id="input-hint">Ek yönlendirme ekleyebilirsiniz (opsiyonel)</div>
+    <div class="input-row">
+      <textarea id="user-input" placeholder="Örn: Özellikle AI sektörüne odaklanın..."></textarea>
+      <button class="btn btn-go" id="main-btn" onclick="handleMain()">Toplantıyı Başlat</button>
+    </div>
+    <div id="approve-wrap" class="hidden">
+      <button class="btn-approve" onclick="applyDecision()">✓ Kararı Uygula — Alpaca (Paper) Emri Gönder</button>
+    </div>
+  </div>
+</div>
+
+<div id="tab-portfoy" class="hidden">
+  <div class="section">
+    <div class="section-title">Midas Portföyü — Gerçek</div>
+    <div class="pf-cards">
+      <div class="pf-card"><div class="pf-label">Toplam Maliyet</div><div class="pf-value" id="pf-cost">—</div></div>
+      <div class="pf-card"><div class="pf-label">Güncel Değer</div><div class="pf-value" id="pf-value">—</div></div>
+      <div class="pf-card"><div class="pf-label">Kar/Zarar</div><div class="pf-value" id="pf-pnl">—</div></div>
+      <div class="pf-card"><div class="pf-label">Pozisyon</div><div class="pf-value" id="pf-count">—</div></div>
+    </div>
+    <div class="section-title">Pozisyonlar</div>
+    <div class="positions" id="positions-list"><div class="no-pos">Yükleniyor...</div></div>
+    <div class="mem-section-title">İzleme Listesi</div>
+    <div class="watch-chips" id="watch-chips"><div class="no-pos">Yükleniyor...</div></div>
+    <div class="hint" style="margin-top:12px">Ekleme ve çıkarma Telegram üzerinden: /portfoy SEMBOL ADET MALİYET · /sil SEMBOL · /izle SEMBOL — BIST hisseleri için sembol sonuna .IS ekleyin (örn: THYAO.IS)</div>
+  </div>
+</div>
+
+<div id="tab-hafiza" class="hidden">
+  <div class="stats-row" id="dec-stats"></div>
+  <div class="mem-section-title">Komite Kararları — Sabah Toplantıları</div>
+  <div id="decisions-list"><div class="no-mem">Yükleniyor...</div></div>
+  <div class="mem-section-title">Toplantı Kayıtları — Manuel Oturumlar</div>
+  <div id="memory-list"><div class="no-mem">Yükleniyor...</div></div>
+</div>
+
+<script>
+let phase = -1;
+const activePortfolio = 'midas';
+let meetingHistory = [];
+let agendaTopic = '';
+let round1={}, round2={}, round3={}, votes={};
+let consensusText = '';
+let newsContext = '';
+let newsArticles = [];
+
+function now() { return new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}); }
+
+function addMsg(agent, text, extraClass='') {
+  const cfg = {
+    claude:{badge:'b-claude',label:'Claude',role:'Makro & Risk Analisti'},
+    gpt:{badge:'b-gpt',label:'GPT',role:'Teknik Analist'},
+    gemini:{badge:'b-gemini',label:'Gemini',role:'Temel Analist'},
+    user:{badge:'b-user',label:'Sen (Moderatör)',role:''},
+    sys:{badge:'b-sys',label:'Sistem',role:''},
+    consensus:{badge:'b-consensus',label:'Konsensüs Kararı',role:'Komite Başkanı'}
+  };
+  const c = cfg[agent]||cfg.sys;
+  const chat = document.getElementById('chat');
+  const div = document.createElement('div');
+  div.className='msg';
+  div.innerHTML=`<div class="msg-header"><span class="badge ${c.badge}">${c.label}</span>${c.role?`<span class="role-tag">${c.role}</span>`:''}<span class="time">${now()}</span></div><div class="body ${agent} ${extraClass}">${text.replace(/</g,'&lt;')}</div>`;
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+}
+
+function addLoading(agent) {
+  const labels={claude:'Claude',gpt:'GPT',gemini:'Gemini',consensus:'Konsensüs'};
+  const badges={claude:'b-claude',gpt:'b-gpt',gemini:'b-gemini',consensus:'b-consensus'};
+  const chat=document.getElementById('chat');
+  const div=document.createElement('div');
+  div.id='load-'+agent; div.className='msg';
+  div.innerHTML=`<div class="msg-header"><span class="badge ${badges[agent]||'b-sys'}">${labels[agent]||agent} düşünüyor...</span></div><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>`;
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+}
+function removeLoading(agent){const el=document.getElementById('load-'+agent);if(el)el.remove();}
+
+function setPhase(p) {
+  phase=p;
+  document.querySelectorAll('.phase-step').forEach((el,i)=>{
+    el.classList.remove('active','done');
+    if(i<p)el.classList.add('done');
+    else if(i===p)el.classList.add('active');
+  });
+}
+
+async function fetchNews(query) {
+  const q = query || document.getElementById('news-query').value.trim();
+  if(!q) return;
+  const status = document.getElementById('news-status');
+  const list = document.getElementById('news-list');
+  status.textContent='Yükleniyor...'; status.className='news-status loading'; status.classList.remove('hidden');
+  list.innerHTML='<div class="news-empty">Haberler yükleniyor...</div>';
+  try {
+    const r = await fetch('/api/news?q='+encodeURIComponent(q));
+    const d = await r.json();
+    newsContext = d.summary || '';
+    newsArticles = d.articles || [];
+    if(!newsArticles.length) {
+      list.innerHTML='<div class="news-empty">Bu konu için haber bulunamadı.</div>';
+      status.textContent='Haber yok'; status.className='news-status error';
+      return;
+    }
+    list.innerHTML = newsArticles.map(a=>{
+      const date = a.date || '';
+      return `<div class="news-item"><div class="news-item-title">${a.title||''}</div><div class="news-item-meta">${a.source||''} · ${date}</div></div>`;
+    }).join('');
+    status.textContent=`${newsArticles.length} haber yüklendi`; status.className='news-status';
+  } catch(e) {
+    list.innerHTML='<div class="news-empty">Haber servisi hatası.</div>';
+    status.textContent='Hata'; status.className='news-status error';
+  }
+}
+
+async function speak(agent, prompt, history=[]) {
+  addLoading(agent);
+  try {
+    const r = await fetch('/api/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({agent,prompt,history,portfolioId:activePortfolio,newsContext, phase})});
+    const d = await r.json();
+    removeLoading(agent);
+    return d.text||'';
+  } catch(e){removeLoading(agent);return 'Bağlantı hatası: '+e.message;}
+}
+
+async function handleMain() {
+  const btn=document.getElementById('main-btn');
+  const input=document.getElementById('user-input');
+  btn.disabled=true;
+
+  if(phase===-1) {
+    setPhase(0); meetingHistory=[];round1={};round2={};round3={};votes={};consensusText='';
+    document.getElementById('approve-wrap').classList.add('hidden');
+    const extra=input.value.trim(); input.value='';
+    if(extra) addMsg('user',extra);
+    addMsg('sys','Gündem belirleme başlıyor...');
+    const prompt=`Bugünkü toplantıda gündem belirleme aşamasındayız. Mevcut portföyümüz ve izleme listemiz üzerinden hangi hisse veya konunun ele alınmasını önerirsiniz? Kısaca açıklayın.${extra?'\nModeratör notu: '+extra:''}`;
+    const [r1,r2,r3]=await Promise.all([speak('claude',prompt),speak('gpt',prompt),speak('gemini',prompt)]);
+    addMsg('claude',r1);addMsg('gpt',r2);addMsg('gemini',r3);
+    meetingHistory.push({agent:'claude',name:'Claude',role:'Makro & Risk Analisti',text:r1,phase:0});
+    meetingHistory.push({agent:'gpt',name:'GPT',role:'Teknik Analist',text:r2,phase:0});
+    meetingHistory.push({agent:'gemini',name:'Gemini',role:'Temel Analist',text:r3,phase:0});
+    document.getElementById('input-hint').textContent='Gündem önerilerini gördünüz. Bugün hangi konuyu konuşacaksınız?';
+    input.placeholder='Gündem konusunu yazın (örn: NVDA hissesi)...';
+    btn.textContent='Analizi Başlat'; btn.disabled=false;
+
+  } else if(phase===0) {
+    agendaTopic=input.value.trim()||'Genel piyasa değerlendirmesi';
+    input.value=''; setPhase(1);
+    addMsg('user','Gündem: '+agendaTopic);
+    if(!newsContext) { document.getElementById('news-query').value=agendaTopic; await fetchNews(agendaTopic); }
+    addMsg('sys',`Tur 1: Her analist "${agendaTopic}" konusunu bağımsız analiz yapıyor...`);
+    const prompt=`Bugünkü gündem: "${agendaTopic}"\nBağımsız analiz edin. AL/SAT/BEKLE önerinizi ve gerekçenizi açıklayın.`;
+    const r1=await speak('claude',prompt);addMsg('claude',r1);
+    const r2=await speak('gpt',prompt);addMsg('gpt',r2);
+    const r3=await speak('gemini',prompt);addMsg('gemini',r3);
+    round1={claude:r1,gpt:r2,gemini:r3};
+    ['claude','gpt','gemini'].forEach((a,i)=>meetingHistory.push({agent:a,name:['Claude','GPT','Gemini'][i],role:['Makro & Risk Analisti','Teknik Analist','Temel Analist'][i],text:[r1,r2,r3][i],phase:1}));
+    document.getElementById('input-hint').textContent='Tartışma turuna geçin.';
+    btn.textContent='Tartışmayı Başlat'; btn.disabled=false;
+
+  } else if(phase===1) {
+    setPhase(2); input.value='';
+    addMsg('sys','Tur 2: Analistler birbirlerinin görüşlerini değerlendiriyor...');
+    const r1ctx=`Claude: ${round1.claude}\nGPT: ${round1.gpt}\nGemini: ${round1.gemini}`;
+    const prompt=`Konu: "${agendaTopic}"\nDiğer görüşler:\n${r1ctx}\nBu görüşlere katılıyor musunuz? Savunun veya revize edin.`;
+    const r1=await speak('claude',prompt,meetingHistory);addMsg('claude',r1);
+    const r2=await speak('gpt',prompt,meetingHistory);addMsg('gpt',r2);
+    const r3=await speak('gemini',prompt,meetingHistory);addMsg('gemini',r3);
+    round2={claude:r1,gpt:r2,gemini:r3};
+    ['claude','gpt','gemini'].forEach((a,i)=>meetingHistory.push({agent:a,name:['Claude','GPT','Gemini'][i],role:['Makro & Risk Analisti','Teknik Analist','Temel Analist'][i],text:[r1,r2,r3][i],phase:2}));
+    btn.textContent='Final Pozisyon'; btn.disabled=false;
+
+  } else if(phase===2) {
+    setPhase(3); input.value='';
+    addMsg('sys','Final turu: Her analist kesin pozisyonunu açıklıyor...');
+    const allCtx=`Tur 1:\nClaude: ${round1.claude}\nGPT: ${round1.gpt}\nGemini: ${round1.gemini}\nTur 2:\nClaude: ${round2.claude}\nGPT: ${round2.gpt}\nGemini: ${round2.gemini}`;
+    const prompt=`Konu: "${agendaTopic}"\nTüm tartışmalar:\n${allCtx}\nFinal pozisyonunuzu açıklayın.`;
+    const r1=await speak('claude',prompt,meetingHistory);addMsg('claude',r1);
+    const r2=await speak('gpt',prompt,meetingHistory);addMsg('gpt',r2);
+    const r3=await speak('gemini',prompt,meetingHistory);addMsg('gemini',r3);
+    round3={claude:r1,gpt:r2,gemini:r3};
+    ['claude','gpt','gemini'].forEach((a,i)=>meetingHistory.push({agent:a,name:['Claude','GPT','Gemini'][i],role:['Makro & Risk Analisti','Teknik Analist','Temel Analist'][i],text:[r1,r2,r3][i],phase:3}));
+    btn.textContent='Oylama Yap'; btn.disabled=false;
+
+  } else if(phase===3) {
+    setPhase(4); input.value='';
+    addMsg('sys','Oylama: Her analist AL/SAT/BEKLE kararını açıklıyor...');
+    const allCtx=meetingHistory.filter(h=>h.phase===3).map(h=>`${h.name}: ${h.text}`).join('\n\n');
+    const prompt=`Konu: "${agendaTopic}"\nFinal analizler:\n${allCtx}\nSadece şu formatta oy ver:\nKARAR: AL/SAT/BEKLE\nSEMBOL: ...\nMİKTAR: $...\nSTOP-LOSS: $...\nHEDEF: $...\nSEBEP: (1 cümle)`;
+    const [v1,v2,v3]=await Promise.all([speak('claude',prompt),speak('gpt',prompt),speak('gemini',prompt)]);
+    addMsg('claude',v1);addMsg('gpt',v2);addMsg('gemini',v3);
+    votes={claude:v1,gpt:v2,gemini:v3};
+    btn.textContent='Uzlaşı Karar Al'; btn.disabled=false;
+
+  } else if(phase===4) {
+    setPhase(5); input.value='';
+    addMsg('sys','Uzlaşı: Komite başkanı ortak kararı üretiyor...');
+    addLoading('consensus');
+    const voteList=[{name:'Claude',role:'Makro & Risk Analisti',text:votes.claude},{name:'GPT',role:'Teknik Analist',text:votes.gpt},{name:'Gemini',role:'Temel Analist',text:votes.gemini}];
+    try {
+      const r=await fetch('/api/consensus',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({votes:voteList,topic:agendaTopic,portfolioId:activePortfolio})});
+      const d=await r.json();
+      removeLoading('consensus');
+      consensusText=d.text;
+      addMsg('consensus',d.text);
+      document.getElementById('approve-wrap').classList.remove('hidden');
+    } catch(e){removeLoading('consensus');consensusText='Hata';addMsg('sys','Uzlaşı hatası.');}
+    await fetch('/api/save-meeting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:agendaTopic,karar:consensusText.slice(0,120),portfolioId:activePortfolio,applied:false})});
+    btn.textContent='Yeni Toplantı'; btn.disabled=false; phase=99;
+
+  } else if(phase===99) {
+    phase=-1;meetingHistory=[];round1={};round2={};round3={};votes={};agendaTopic='';consensusText='';newsContext='';newsArticles=[];
+    document.getElementById('approve-wrap').classList.add('hidden');
+    document.getElementById('news-list').innerHTML='<div class="news-empty">Toplantı konusunu yazıp "Haberleri Getir"e basın.</div>';
+    document.getElementById('chat').innerHTML='<div class="msg"><div class="msg-header"><span class="badge b-sys">Sistem</span></div><div class="body sys">Yeni toplantı hazır.</div></div>';
+    document.querySelectorAll('.phase-step').forEach((el,i)=>{el.classList.remove('active','done');if(i===0)el.classList.add('active');});
+    btn.textContent='Toplantıyı Başlat'; btn.disabled=false;
+  }
+}
+
+async function applyDecision() {
+  addMsg('sys', 'İşlem ve Tetikleyiciler Alpaca\'ya (paper) iletiliyor...');
+  document.getElementById('approve-wrap').classList.add('hidden');
+  try {
+    const r = await fetch('/api/execute-trade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ consensusText: consensusText, portfolioId: activePortfolio })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      addMsg('consensus', `✅ SİSTEM BAŞARILI: ${d.message}`, 'body');
+    } else {
+      addMsg('sys', `⚠️ BİLGİ/HATA: ${d.error}`);
+    }
+  } catch (e) {
+    addMsg('sys', 'Bağlantı hatası: ' + e.message);
+  }
+}
+
+// --- MIDAS PORTFÖYÜ ---
+async function loadMidas() {
+  try {
+    const r = await fetch('/api/midas');
+    const d = await r.json();
+    renderMidasStrip(d);
+    renderMidasTab(d);
+  } catch(e) {
+    document.getElementById('midas-strip').firstElementChild.innerHTML =
+      '<span class="ms-name">Midas Portföyü</span> · yüklenemedi';
+  }
+}
+
+function renderMidasStrip(d) {
+  const strip = document.getElementById('midas-strip');
+  const withPrice = d.positions.filter(p=>p.pnl!==null);
+  const totalPnl = withPrice.reduce((s,p)=>s+p.pnl,0);
+  const left = `<span class="ms-name">Midas Portföyü</span> · ${d.positions.length} pozisyon · ${d.watchlist.length} izlemede`;
+  const right = withPrice.length
+    ? `<span class="ms-pnl ${totalPnl>=0?'green':'red'}">${totalPnl>=0?'+':''}$${totalPnl.toFixed(2)}</span>`
+    : (d.positions.length ? '<span style="color:#333">fiyat bekleniyor</span>' : '<span style="color:#333">Telegram: /portfoy ile ekle</span>');
+  strip.innerHTML = `<span>${left}</span><span>${right}</span>`;
+}
+
+function renderMidasTab(d) {
+  const cost = d.positions.reduce((s,p)=>s+p.cost,0);
+  const withPrice = d.positions.filter(p=>p.value!==null);
+  const value = withPrice.reduce((s,p)=>s+p.value,0) +
+                d.positions.filter(p=>p.value===null).reduce((s,p)=>s+p.cost,0);
+  const pnl = value - cost;
+  document.getElementById('pf-cost').textContent = '$'+cost.toFixed(2);
+  document.getElementById('pf-value').textContent = '$'+value.toFixed(2);
+  const pnlEl = document.getElementById('pf-pnl');
+  pnlEl.textContent = (pnl>=0?'+':'')+'$'+pnl.toFixed(2);
+  pnlEl.className = 'pf-value '+(pnl>=0?'green':'red');
+  document.getElementById('pf-count').textContent = d.positions.length;
+
+  const list = document.getElementById('positions-list');
+  if(!d.positions.length) {
+    list.innerHTML = '<div class="no-pos">Pozisyon yok. Telegram\'dan ekle: /portfoy SEMBOL ADET MALİYET</div>';
+  } else {
+    list.innerHTML = d.positions.map(p=>{
+      const cur = p.currentPrice;
+      return `<div class="pos-item">
+        <div class="pos-left">
+          <div class="pos-symbol">${p.symbol}</div>
+          <div class="pos-detail">${p.qty} Adet @ $${p.avgCost.toFixed(2)}</div>
+        </div>
+        <div class="pos-right">
+          <div class="pos-price">${cur?'$'+cur.toFixed(2):'fiyat yok'}</div>
+          ${p.pnl!==null?`<div class="pos-pnl ${p.pnl>=0?'green':'red'}">${p.pnl>=0?'+':''}$${p.pnl.toFixed(2)}</div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const chips = document.getElementById('watch-chips');
+  chips.innerHTML = d.watchlist.length
+    ? d.watchlist.map(w=>`<span class="watch-chip">${w.symbol}${w.price?`<span class="wc-price">$${w.price.toFixed(2)}</span>`:''}</span>`).join('')
+    : '<div class="no-pos">İzleme listesi boş. Telegram\'dan ekle: /izle SEMBOL</div>';
+}
+
+// --- HAFIZA: KARARLAR + TOPLANTI KAYITLARI ---
+const ST = {
+  pending:  {cls:'st-pending',  label:'⏳ Bekliyor'},
+  applied:  {cls:'st-applied',  label:'✅ Uygulandı'},
+  rejected: {cls:'st-rejected', label:'❌ Reddedildi'}
+};
+
+async function loadHafiza() {
+  try {
+    const [rd, rm] = await Promise.all([fetch('/api/decisions'), fetch('/api/memory')]);
+    const decisions = await rd.json();
+    const mem = await rm.json();
+    renderStats(decisions);
+    renderDecisions(decisions);
+    renderMemory(mem);
+  } catch(e) {
+    document.getElementById('decisions-list').innerHTML = '<div class="no-mem">Yüklenemedi: '+e.message+'</div>';
+  }
+}
+
+function renderStats(decisions) {
+  const counts = {applied:0, rejected:0, pending:0};
+  decisions.forEach(d=>{ if(counts[d.status]!==undefined) counts[d.status]++; });
+  document.getElementById('dec-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-num green">${counts.applied}</div><div class="stat-label">Uygulandı</div></div>
+    <div class="stat-card"><div class="stat-num red">${counts.rejected}</div><div class="stat-label">Reddedildi</div></div>
+    <div class="stat-card"><div class="stat-num wait">${counts.pending}</div><div class="stat-label">Bekliyor</div></div>`;
+}
+
+function renderDecisions(decisions) {
+  const list = document.getElementById('decisions-list');
+  if(!decisions.length) {
+    list.innerHTML = '<div class="no-mem">Henüz komite kararı yok. İlk sabah toplantısından sonra burada görünecek.</div>';
+    return;
+  }
+  list.innerHTML = decisions.map(d=>{
+    const st = ST[d.status] || ST.pending;
+    const parts = [];
+    if(d.amount) parts.push('$'+d.amount);
+    if(d.stop_loss) parts.push('Stop: $'+d.stop_loss);
+    if(d.take_profit) parts.push('Hedef: $'+d.take_profit);
+    return `<div class="mem-item">
+      <div class="mem-header">
+        <span class="mem-date">#${d.id} · ${d.meeting_date||''}</span>
+        <span class="st ${st.cls}">${st.label}</span>
+      </div>
+      <div class="dec-line"><span class="dec-action-${d.action}">${d.action}</span> ${d.symbol}${parts.length?' · '+parts.join(' · '):''}</div>
+      ${d.rationale?`<div class="dec-rationale">${String(d.rationale).replace(/</g,'&lt;')}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderMemory(mem) {
+  const list = document.getElementById('memory-list');
+  if(!mem.length){list.innerHTML='<div class="no-mem">Henüz kaydedilmiş toplantı yok.</div>';return;}
+  list.innerHTML = mem.slice().reverse().map(m=>`<div class="mem-item">
+    <div class="mem-header"><span class="mem-date">${m.date||''}</span>
+      <span class="st ${m.applied?'st-applied':'st-pending'}">${m.applied?'✅ Uygulandı':'○ Uygulanmadı'}</span></div>
+    <div class="mem-topic">${String(m.topic||'').replace(/</g,'&lt;')}</div>
+    <div class="mem-karar">${String(m.karar||'').replace(/</g,'&lt;')}</div>
+  </div>`).join('');
+}
+
+function switchTab(t) {
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['toplanti','portfoy','hafiza'][i]===t));
+  ['toplanti','portfoy','hafiza'].forEach(n=>{const el=document.getElementById('tab-'+n);if(el)el.classList.toggle('hidden',n!==t);});
+  if(t === 'hafiza') loadHafiza();
+  if(t === 'portfoy') loadMidas();
+}
+
+document.getElementById('date-display').textContent=new Date().toLocaleDateString('tr-TR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+loadMidas();
+</script>
+</body>
+</html>
