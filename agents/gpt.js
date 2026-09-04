@@ -7,7 +7,7 @@ async function callGPT(messages, system) {
         'Authorization': 'Bearer ' + process.env.OPENAI_API_KEY
       },
       body: JSON.stringify({
-        model: 'gpt-5.5',
+        model: 'gpt-6-astra',
         max_completion_tokens: 4096,
         messages: [{ role: 'system', content: system }, ...messages]
       })

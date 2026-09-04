@@ -17,7 +17,7 @@ async function callClaude(messages, staticSystem, dynamicContext = '') {
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-fable-5-1',
         max_tokens: 4096,
         system: [{ type: 'text', text: staticSystem, cache_control: { type: 'ephemeral' } }],
         messages: finalMessages
