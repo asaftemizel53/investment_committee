@@ -99,6 +99,7 @@ async function handleCommand(text, runMeeting, runHealth) {
     case '/portfoy': {
       const [sym, qty, cost, force] = args;
       if (!sym || isNaN(qty) || isNaN(cost)) return 'Kullanim: /portfoy AAPL 10 185.50';
+      if (Number(qty) <= 0 || Number(cost) <= 0) return 'Adet ve maliyet sifirdan buyuk olmali.';
       const symU = sym.toUpperCase();
       const buyQty = Number(qty);
       const buyCost = Number(cost);
@@ -122,6 +123,7 @@ async function handleCommand(text, runMeeting, runHealth) {
     case '/sil': {
       const [sym, qty, price] = args;
       if (!sym || !qty || !price || isNaN(qty) || isNaN(price)) return 'Kullanim: /sil AAPL 5 195.20';
+      if (Number(qty) <= 0 || Number(price) <= 0) return 'Adet ve fiyat sifirdan buyuk olmali.';
       const symU = sym.toUpperCase();
       const existing = getPositions().find(p => p.symbol === symU);
       if (!existing) return 'Boyle bir pozisyon yok.';
@@ -180,7 +182,7 @@ async function handleCommand(text, runMeeting, runHealth) {
     }
     case '/yardim':
     case '/start':
-      return 'Komutlar:\n/portfoy SEMBOL ADET MALIYET (alim, kasadan duser)\n/sil SEMBOL ADET FIYAT (satim, kasaya eklenir)\n/izle SEMBOL\n/izlesil SEMBOL\n/liste\n/toplanti\n/saglik (veri kaynaklarini test et)\n+ / - (karar geri bildirimi, coklu icin +ID)';
+      return 'Komutlar:\n/portfoy SEMBOL ADET MALIYET (alim, kasadan duser)\n/sil SEMBOL ADET FIYAT (satim, kasaya eklenir)\n/izle SEMBOL\n/izlesil SEMBOL\n/liste\n/toplanti [konu]\n/not METIN (her toplantida komiteye iletilir)\n/notlar\n/notsil NUMARA\n/saglik (veri kaynaklarini test et)\n+ / - (karar geri bildirimi, coklu icin +ID)';
     default:
       return null; // taninmayan mesajlari sessizce gec
   }

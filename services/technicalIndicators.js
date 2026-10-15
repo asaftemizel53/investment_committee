@@ -33,6 +33,13 @@ function calcEMA(closes, period) {
   return parseFloat(ema.toFixed(4));
 }
 
+// Basit hareketli ortalama (son N kapanisin ortalamasi)
+function calcSMA(closes, period) {
+  if (closes.length < period) return null;
+  const slice = closes.slice(-period);
+  return parseFloat((slice.reduce((a, b) => a + b, 0) / period).toFixed(2));
+}
+
 // Tüm EMA değerleri dizisi
 function calcEMAArray(closes, period) {
   if (closes.length < period) return [];
@@ -95,8 +102,8 @@ async function getTechnicalData(symbol) {
     const rsi = calcRSI(validCloses, 14);
     const macd = calcMACD(validCloses);
     const bb = calcBollinger(validCloses, 20);
-    const sma50 = validCloses.length >= 50 ? calcEMA(validCloses, 50) : null;
-    const sma20 = calcEMA(validCloses, 20);
+    const sma50 = calcSMA(validCloses, 50);
+    const sma20 = calcSMA(validCloses, 20);
 
     // RSI yorumu
     let rsiComment = '';

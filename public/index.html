@@ -120,7 +120,7 @@ textarea:focus{outline:none;border-color:#2a2a2a}
     opts = opts || {};
     opts.headers = opts.headers || {};
     if (typeof url === 'string' && url.startsWith('/api')) {
-      opts.headers['x-api-key'] = '4adcc35d5d60ade668290ca29faaae9b9aaa47ef6d9fd612db1b2ad98c8f55e9';
+      opts.headers['x-api-key'] = '__INTERNAL_KEY__';
     }
     return _fetch(url, opts);
   };
@@ -220,6 +220,7 @@ let meetingHistory = [];
 let agendaTopic = '';
 let round1={}, round2={}, round3={}, votes={};
 let consensusText = '';
+let consensusData = null; // /api/consensus'tan gelen JSON karar — emir bununla gonderilir
 let newsContext = '';
 let newsArticles = [];
 
@@ -308,7 +309,7 @@ async function handleMain() {
   btn.disabled=true;
 
   if(phase===-1) {
-    setPhase(0); meetingHistory=[];round1={};round2={};round3={};votes={};consensusText='';
+    setPhase(0); meetingHistory=[];round1={};round2={};round3={};votes={};consensusText='';consensusData=null;
     document.getElementById('approve-wrap').classList.add('hidden');
     const extra=input.value.trim(); input.value='';
     if(extra) addMsg('user',extra);
@@ -382,14 +383,17 @@ async function handleMain() {
       const d=await r.json();
       removeLoading('consensus');
       consensusText=d.text;
+      consensusData=d.structuredData||null;
       addMsg('consensus',d.text);
-      document.getElementById('approve-wrap').classList.remove('hidden');
-    } catch(e){removeLoading('consensus');consensusText='Hata';addMsg('sys','Uzlaşı hatası.');}
+      // Onay butonu yalnizca okunabilir bir JSON karar varsa gosterilir
+      if(consensusData) document.getElementById('approve-wrap').classList.remove('hidden');
+      else addMsg('sys','Karar yapilandirilamadi'+(d.parseError?' ('+d.parseError+')':'')+', emir gonderilemez.');
+    } catch(e){removeLoading('consensus');consensusText='Hata';consensusData=null;addMsg('sys','Uzlaşı hatası.');}
     await fetch('/api/save-meeting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:agendaTopic,karar:consensusText.slice(0,120),portfolioId:activePortfolio,applied:false})});
     btn.textContent='Yeni Toplantı'; btn.disabled=false; phase=99;
 
   } else if(phase===99) {
-    phase=-1;meetingHistory=[];round1={};round2={};round3={};votes={};agendaTopic='';consensusText='';newsContext='';newsArticles=[];
+    phase=-1;meetingHistory=[];round1={};round2={};round3={};votes={};agendaTopic='';consensusText='';consensusData=null;newsContext='';newsArticles=[];
     document.getElementById('approve-wrap').classList.add('hidden');
     document.getElementById('news-list').innerHTML='<div class="news-empty">Toplantı konusunu yazıp "Haberleri Getir"e basın.</div>';
     document.getElementById('chat').innerHTML='<div class="msg"><div class="msg-header"><span class="badge b-sys">Sistem</span></div><div class="body sys">Yeni toplantı hazır.</div></div>';
@@ -405,7 +409,7 @@ async function applyDecision() {
     const r = await fetch('/api/execute-trade', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ consensusText: consensusText, portfolioId: activePortfolio })
+      body: JSON.stringify({ structuredData: consensusData, portfolioId: activePortfolio })
     });
     const d = await r.json();
     if (d.ok) {

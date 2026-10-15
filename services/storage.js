@@ -71,7 +71,9 @@ function saveMemory(arr) {
 function isErrorEntry(entry) {
   const text = JSON.stringify(entry).toLowerCase();
   return ['baglanti hatasi', 'bağlantı hatası', 'fetch failed', '"error"',
-          'quota', 'not found for api version', 'no longer available',
+          'hata (claude)', 'hata (gpt)', 'hata (gemini)',
+          'exceeded your current quota', 'quota exceeded', 'resource_exhausted',
+          'not found for api version', 'no longer available',
           '⚠️ hata'].some(p => text.includes(p));
 }
 function appendMemory(entry, limit = 100) {
@@ -106,13 +108,16 @@ function saveTriggers(arr) {
 }
 
 // ---- PORTFOLIOS (eski API ile uyumlu) ----
+// Strateji koddan gelir (DB'deki eski kopya ezilir), boylece ortak
+// "uzun vadeli" kuralla celismez ve eski sabit dolar limitleri kalmaz.
+const STRATEGY = 'Uzun vadeli (1+ yil) buyume odakli portfoy. KURALLAR: (1) Tek pozisyona toplam portfoy degerinin maksimum %25i girilebilir. (2) Karar gerekcesi sirket kalitesi, degerleme, buyume ve makro trend olmali; teknik sinyaller (RSI, MACD vb.) yalnizca giris/cikis zamanlamasi notudur, tek basina AL/SAT gerekcesi olamaz. (3) BEKLE karari veriyorsan hangi SOMUT kosul saglandiginda AL diyecegini belirt (ornek: belirli bir fiyat/degerleme esigi, bilancoda somut gelisme). (4) Kisa vadeli dalgalanma tek basina red sebebi degildir.';
 const DEFAULT_PF = {
-  midas: { id: 'midas', name: 'Portfoyum', cash: 0, positions: [], totalValue: 0, startValue: 0, strategy: 'Agresif buyume odakli portfoy. KURALLAR: (1) Tek pozisyona toplam portfoy degerinin maksimum %25i girilebilir. (2) Guclu teknik veya temel sinyal varsa alim yapmaktan cekinme, asiri temkinli olma. (3) BEKLE karari veriyorsan hangi SOMUT kosul saglandiginda AL diyecegini mutlaka belirt (ornek: RSI 45 altina inerse). (4) Kisa vadeli volatilite tek basina red sebebi degildir.' }
+  midas: { id: 'midas', name: 'Portfoyum', cash: 0, positions: [], totalValue: 0, startValue: 0, strategy: STRATEGY }
 };
 function loadPortfolio(id) {
   const base = DEFAULT_PF[id] || DEFAULT_PF.midas;
   const row = db.prepare('SELECT data FROM portfolios WHERE id = ?').get(id);
-  if (row) return { ...base, ...JSON.parse(row.data) };
+  if (row) return { ...base, ...JSON.parse(row.data), strategy: base.strategy };
   return base;
 }
 function savePortfolio(id, data) {

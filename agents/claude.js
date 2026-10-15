@@ -25,7 +25,8 @@ async function callClaude(messages, staticSystem, dynamicContext = '') {
     });
     const d = await r.json();
     if (d.error) { console.error('Claude hata:', d.error); return 'Hata (Claude): ' + d.error.message; }
-    return d.content?.[0]?.text || 'Bos Yanit';
+    const textBlock = d.content?.find(b => b.type === 'text');
+    return textBlock?.text || 'Bos Yanit';
   } catch (e) { return 'Claude baglanti hatasi: ' + e.message; }
 }
 

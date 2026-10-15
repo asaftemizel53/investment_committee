@@ -20,7 +20,16 @@ const midasRoutes = require('./routes/midas');
 
 const app = express();
 app.use(express.json());
-app.use(express.static('public'));
+
+// Arayuz: INTERNAL_KEY repoda DEGIL, sayfa sunulurken .env'den enjekte edilir.
+// Sunucu yalnizca 127.0.0.1'i dinledigi icin sayfayi sadece bu bilgisayar acabilir.
+const fs = require('fs');
+const path = require('path');
+const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public/index.html'), 'utf8');
+app.get(['/', '/index.html'], (req, res) => {
+  res.type('html').send(INDEX_HTML.replace('__INTERNAL_KEY__', process.env.INTERNAL_KEY || ''));
+});
+app.use(express.static('public', { index: false }));
 
 app.use('/api', agentRoutes);
 app.use('/api', tradeRoutes);
@@ -63,5 +72,7 @@ startTelegramListener(
   () => checkDataSources({ notifyOnSuccess: true }).catch(e => console.error('[SAGLIK] Hata:', e.message))
 );
 
-app.listen(process.env.PORT || 3000, () =>
-  console.log('Yatirim Komitesi - http://localhost:3000'));
+// Sadece yerel erisim: ag uzerinden (ayni Wi-Fi vb.) API'ye ulasilamaz.
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '127.0.0.1', () =>
+  console.log('Yatirim Komitesi - http://localhost:' + PORT));

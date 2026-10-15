@@ -14,7 +14,7 @@ const { callGPT } = require('../agents/gpt');
 const { callGemini } = require('../agents/gemini');
 const { AGENT_SYSTEMS } = require('../agents/systems');
 const { loadPortfolio, getPositions } = require('../services/storage');
-const { getDynamicTickerData, getQuotesFor } = require('../services/marketData');
+const { getDynamicTickerData, getQuotesFor, resolveSymbols, formatQuote } = require('../services/marketData');
 const { getMacroData } = require('../services/macroData');
 const { getTechnicalDataForHistory } = require('../services/technicalIndicators');
 const { getFundamentalDataForHistory } = require('../services/fundamentalData');
@@ -26,14 +26,24 @@ router.post('/speak', requireAuth, async (req, res) => {
   const positions = getPositions();
 
   // Ortak + agent'a ozel veri akislari (paralel cek)
-  const [tickerData, agentData, newsData, quotes] = await Promise.all([
+  const [tickerData, agentData, newsData, quotes, promptCompanies] = await Promise.all([
     getDynamicTickerData(history),
     agent === 'claude' ? getMacroData()
       : agent === 'gpt' ? getTechnicalDataForHistory(history)
       : agent === 'gemini' ? getFundamentalDataForHistory(history)
       : Promise.resolve(''),
     getNewsForHistory(history),
-    positions.length ? getQuotesFor(positions.map(p => p.symbol)) : Promise.resolve([])
+    positions.length ? getQuotesFor(positions.map(p => p.symbol)) : Promise.resolve([]),
+    // Soruda adi gecen sirketler ("SpaceX" -> SPCX) canli veriyle eklenir
+    resolveSymbols(prompt).then(async found => {
+      if (!found.length) return '';
+      const qs = await getQuotesFor(found.map(f => f.symbol));
+      const qm = Object.fromEntries(qs.map(q => [q.symbol, q]));
+      return '\n\n[SORUDAKI SIRKETLER — CANLI BORSA VERISI]\n' + found.map(f =>
+        '• ' + f.term + ' = ' + f.name + ' (' + f.symbol + ', HALKA ACIK): ' +
+        (qm[f.symbol.toUpperCase()] ? formatQuote(qm[f.symbol.toUpperCase()]).replace(/^► /, '') : 'fiyat alinamadi')
+      ).join('\n');
+    })
   ]);
 
   const priceMap = Object.fromEntries(quotes.map(q => [q.symbol, q.price]));
@@ -57,6 +67,7 @@ router.post('/speak', requireAuth, async (req, res) => {
   const staticSystem = AGENT_SYSTEMS[agent](portfolio.strategy, phase);
   const dynamicContext = [
     pfCtx,
+    promptCompanies,
     tickerData,
     agentData,
     newsData,

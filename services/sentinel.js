@@ -25,8 +25,10 @@ function startSentinel() {
       if (t.status !== 'active') continue;
       const q = await fetchQuote(t.symbol);
       if (!q?.price) continue;
-      const hit = (t.operator === '>' && q.price >= t.target) ||
-                  (t.operator === '<' && q.price <= t.target);
+      const op = String(t.operator || '').trim();
+      const target = Number(t.target);
+      const hit = (['>', '>='].includes(op) && q.price >= target) ||
+                  (['<', '<='].includes(op) && q.price <= target);
       if (hit) {
         const msg = '🚨 YATIRIM KOMITESI UYARISI\n' + t.symbol + ' = $' + q.price +
           ' (Sart: ' + t.operator + ' ' + t.target + ')\nKonu: ' + (t.topic || '-') +

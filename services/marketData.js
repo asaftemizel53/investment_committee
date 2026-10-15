@@ -1,10 +1,20 @@
 // services/marketData.js — v7/quote endpoint'i artik auth istedigi icin
 // v8/chart endpoint'ine gecildi (sembol basina bir istek, paralel).
 
+// Modellerin/kullanicinin yazdigi yaygin adlar -> Yahoo sembolu
+const SYMBOL_ALIASES = {
+  VIX: '^VIX', US10Y: '^TNX', TNX: '^TNX', '10Y': '^TNX', DXY: 'DX-Y.NYB',
+  SPX: '^GSPC', SP500: '^GSPC', NDX: '^NDX', IXIC: '^IXIC', GOLD: 'GC=F', OIL: 'CL=F'
+};
+function normalizeSymbol(symbol) {
+  const s = String(symbol || '').trim().toUpperCase();
+  return SYMBOL_ALIASES[s] || s;
+}
+
 async function fetchQuote(symbol) {
   try {
     const r = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`,
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(normalizeSymbol(symbol))}?interval=1d&range=5d`,
       { headers: { 'User-Agent': 'Mozilla/5.0' } }
     );
     const d = await r.json();
@@ -46,4 +56,36 @@ async function getQuotesFor(symbols) {
   return quotes;
 }
 
-module.exports = { getDynamicTickerData, getQuotesFor, fetchQuote, formatQuote };
+// Serbest metindeki sirket adlarini/sembolleri borsa sembolune cevirir
+// ("SpaceX" -> SPCX). Modellerin egitim bilgisi eski oldugu icin (ornegin
+// sonradan halka arz olan sirketleri "halka acik degil" sanabilirler),
+// gundemde gecen her sirketin canli verisi baglama acikca eklenmeli.
+// Sadece buyuk harfle baslayan kelimeler denenir (Turkce fiiller elenir).
+async function searchSymbol(term) {
+  try {
+    const r = await fetch(
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(term)}&quotesCount=5&newsCount=0`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' } }
+    );
+    const d = await r.json();
+    const t = term.toLowerCase();
+    const hit = (d.quotes || []).find(q => {
+      if (!['EQUITY', 'ETF'].includes(q.quoteType)) return false;
+      const name = ((q.longname || '') + ' ' + (q.shortname || '')).toLowerCase().replace(/\s+/g, '');
+      return q.symbol?.toUpperCase() === term.toUpperCase() || name.includes(t) || q.score >= 100000;
+    });
+    return hit ? { term, symbol: hit.symbol, name: hit.longname || hit.shortname || hit.symbol, exchange: hit.exchDisp || '' } : null;
+  } catch (e) { return null; }
+}
+
+async function resolveSymbols(text) {
+  if (!text) return [];
+  const terms = [...new Set(
+    text.split(/[\s,;/?!.()]+/)
+      .map(w => w.split(/['’]/)[0])        // SpaceX'i -> SpaceX
+      .filter(w => /^[A-ZÇĞİÖŞÜ][\w&.-]{1,}$/.test(w))
+  )].slice(0, 6);
+  return (await Promise.all(terms.map(searchSymbol))).filter(Boolean);
+}
+
+module.exports = { getDynamicTickerData, getQuotesFor, fetchQuote, formatQuote, resolveSymbols, normalizeSymbol };

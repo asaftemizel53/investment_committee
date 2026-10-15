@@ -49,6 +49,7 @@ async function getFundamentalData(symbol) {
       if (suffix === '%') return (val * 100).toFixed(1) + '%';
       if (suffix === 'B') return '$' + (val / 1e9).toFixed(2) + 'B';
       if (suffix === 'x') return val.toFixed(2) + 'x';
+      if (suffix === 'pct-x') return (val / 100).toFixed(2) + 'x'; // Yahoo debtToEquity yuzde verir (78.44 -> 0.78x)
       return val.toFixed(2);
     }
 
@@ -57,7 +58,7 @@ async function getFundamentalData(symbol) {
       'Gelir Buyumesi: ' + fmt(fd.revenueGrowth, '%') + ' | Toplam Gelir: ' + fmt(fd.totalRevenue, 'B'),
       'Brut Marj: ' + fmt(fd.grossMargins, '%') + ' | Faaliyet Marji: ' + fmt(fd.operatingMargins, '%') + ' | Net Marj: ' + fmt(fd.profitMargins, '%'),
       'Ozkaynak Karliligi (ROE): ' + fmt(fd.returnOnEquity, '%'),
-      'Borc/Ozkaynak: ' + fmt(fd.debtToEquity, 'x') + ' | Cari Oran: ' + fmt(fd.currentRatio, 'x'),
+      'Borc/Ozkaynak: ' + fmt(fd.debtToEquity, 'pct-x') + ' | Cari Oran: ' + fmt(fd.currentRatio, 'x'),
       'EPS: ' + fmt(ks.trailingEps, '') + ' | PEG: ' + fmt(ks.pegRatio, 'x') + ' | Beta: ' + fmt(ks.beta, ''),
       'Aciga Satis Orani: ' + fmt(ks.shortRatio, 'x') + ' | Temettü: ' + fmt(sd.dividendYield, '%') + ' | Dagitim Orani: ' + fmt(sd.payoutRatio, '%')
     ];

@@ -11,7 +11,7 @@ function parseTradeJson(raw) {
       throw new Error('Eksik alan: action veya symbol');
     }
 
-    if (!['AL', 'SAT', 'BEKLE'].includes(data.action)) {
+    if (!['AL', 'SAT', 'TUT', 'BEKLE'].includes(data.action)) {
       throw new Error('Gecersiz action: ' + data.action);
     }
 
@@ -19,7 +19,7 @@ function parseTradeJson(raw) {
       throw new Error('Gecersiz amount: ' + data.amount);
     }
 
-    if (data.action !== 'BEKLE' && data.amount <= 0) {
+    if (!['BEKLE', 'TUT'].includes(data.action) && data.amount <= 0) {
       throw new Error('AL/SAT karari icin amount sifirdan buyuk olmali');
     }
 
