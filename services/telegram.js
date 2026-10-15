@@ -7,6 +7,9 @@
 //   /izlesil SEMBOL               -> izleme listesinden cikar
 //   /liste                        -> portfoy + izleme listesi
 //   /toplanti                     -> sabah toplantisini elle tetikle
+//   /kasa [TUTAR]                 -> nakdi goster / Midas'taki nakde esitle
+//   /esikler                      -> komitenin aktif alim/stop esikleri
+//   /esiksil SEMBOL               -> bir sembolun esiklerini kaldir
 //   /karne                        -> gecmis kararlarin dogruluk karnesi
 //   /detay                        -> son toplantida analistlerin tam yazdiklari
 //   + veya +2                     -> bekleyen karari UYGULANDI isaretle
@@ -19,7 +22,7 @@ const {
   loadPortfolio, savePortfolio
 } = require('./storage');
 const { fetchQuote } = require('./marketData');
-const { addNote, getNotes, deleteNote, loadMemory } = require('./storage');
+const { addNote, getNotes, deleteNote, loadMemory, getActiveThresholds, getThresholdHistory, removeThresholdsFor } = require('./storage');
 const { buildScorecard } = require('./scorecard');
 
 // Sembol dogrulama: Yahoo'da fiyati var mi? 'zorla' ile atlanabilir.
@@ -56,7 +59,7 @@ function adjustCash(delta) {
 function listeText() {
   const pos = getPositions();
   const watch = getWatchlist();
-  let out = 'PORTFOY (Midas):\n';
+  let out = 'KASA: $' + Number(loadPortfolio('midas').cash || 0).toFixed(2) + '\n\nPORTFOY (Midas):\n';
   out += pos.length
     ? pos.map(p => `• ${p.symbol}: ${p.qty} adet @ $${p.avg_cost}`).join('\n')
     : '(bos — /portfoy SEMBOL ADET MALIYET ile ekle)';
@@ -166,6 +169,34 @@ async function handleCommand(text, runMeeting, runHealth) {
       }
       return 'Toplanti fonksiyonu bagli degil.';
     }
+    case '/kasa': {
+      const pf = loadPortfolio('midas');
+      if (!args[0]) return 'Kasa (nakit): $' + Number(pf.cash || 0).toFixed(2) +
+        '\nMidas\'taki nakitle esitlemek icin: /kasa 500';
+      const amount = Number(String(args[0]).replace(',', '.').replace('$', ''));
+      if (isNaN(amount) || amount < 0) return 'Kullanim: /kasa 500  (Midas\'taki nakit, dolar)';
+      const old = Number(pf.cash || 0);
+      pf.cash = Math.round(amount * 100) / 100;
+      savePortfolio('midas', pf);
+      return `Kasa guncellendi: $${old.toFixed(2)} → $${pf.cash.toFixed(2)}. Komite bir sonraki toplantida bu nakdi kullanacak.`;
+    }
+    case '/esikler': {
+      const list = getActiveThresholds();
+      if (!list.length) return 'Aktif esik yok. Komite ilk toplantida her hisse icin esik belirleyecek.';
+      const lines = await Promise.all(list.map(async t => {
+        const q = await fetchQuote(t.symbol);
+        const hist = getThresholdHistory(t.symbol, t.kind);
+        const moves = hist.length > 1 ? ' | gecmis: ' + hist.map(h => '$' + h.price).join(' → ') : '';
+        const met = q?.price && q.price <= t.price;
+        return `${met ? '✅' : '•'} ${t.symbol} ${t.kind === 'ALIM' ? 'alim <' : 'stop <'} $${t.price} | guncel ${q?.price ? '$' + q.price : '?'}${moves}`;
+      }));
+      return '🎯 AKTIF ESIKLER (✅ = gerceklesti)\n' + lines.join('\n') + '\n\nKaldirmak icin: /esiksil SEMBOL';
+    }
+    case '/esiksil': {
+      if (!args[0]) return 'Kullanim: /esiksil COHR';
+      const n = removeThresholdsFor(args[0]);
+      return n ? args[0].toUpperCase() + ' esikleri kaldirildi.' : args[0].toUpperCase() + ' icin aktif esik yok.';
+    }
     case '/karne':
       return await buildScorecard();
     case '/detay': {
@@ -195,7 +226,7 @@ async function handleCommand(text, runMeeting, runHealth) {
     }
     case '/yardim':
     case '/start':
-      return 'Komutlar:\n/portfoy SEMBOL ADET MALIYET (alim, kasadan duser)\n/sil SEMBOL ADET FIYAT (satim, kasaya eklenir)\n/izle SEMBOL\n/izlesil SEMBOL\n/liste\n/toplanti [konu]\n/not METIN (her toplantida komiteye iletilir)\n/notlar\n/notsil NUMARA\n/saglik (veri kaynaklarini test et)\n/karne (gecmis kararlarin dogruluk karnesi)\n/detay (son toplantida analistlerin tam yazdiklari)\n+ / - (karar geri bildirimi, coklu icin +ID)';
+      return 'Komutlar:\n/portfoy SEMBOL ADET MALIYET (alim, kasadan duser)\n/sil SEMBOL ADET FIYAT (satim, kasaya eklenir)\n/izle SEMBOL\n/izlesil SEMBOL\n/liste\n/toplanti [konu]\n/not METIN (her toplantida komiteye iletilir)\n/notlar\n/notsil NUMARA\n/saglik (veri kaynaklarini test et)\n/kasa [TUTAR] (nakdi goster / Midas ile esitle)\n/esikler (komitenin alim/stop esikleri)\n/esiksil SEMBOL\n/karne (gecmis kararlarin dogruluk karnesi)\n/detay (son toplantida analistlerin tam yazdiklari)\n+ / - (karar geri bildirimi, coklu icin +ID)';
     default:
       return null; // taninmayan mesajlari sessizce gec
   }

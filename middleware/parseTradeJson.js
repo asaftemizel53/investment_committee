@@ -11,7 +11,7 @@ function parseTradeJson(raw) {
       throw new Error('Eksik alan: action veya symbol');
     }
 
-    if (!['AL', 'SAT', 'TUT', 'BEKLE'].includes(data.action)) {
+    if (!['AL', 'KADEMELI AL', 'TUT', 'AZALT', 'SAT', 'BEKLE'].includes(data.action)) {
       throw new Error('Gecersiz action: ' + data.action);
     }
 

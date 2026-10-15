@@ -48,8 +48,21 @@ CREATE TABLE IF NOT EXISTS decisions (
   stop_loss REAL,
   take_profit REAL,
   rationale TEXT,
-  status TEXT DEFAULT 'pending',   -- pending | applied | rejected
+  status TEXT DEFAULT 'pending',   -- pending | applied | rejected | bilgi (TUT/BEKLE, geri bildirim beklenmez)
   created_at TEXT DEFAULT (datetime('now'))
+);
+-- Komitenin taahhut ettigi fiyat esikleri. ALIM: "bu fiyatin altinda alirim",
+-- STOP: "bu fiyatin altinda cikarim". Ayni sembol+tur icin tek aktif esik olur;
+-- yeni fiyat gelince eskisi 'replaced' olur, boylece esik kaydirma gecmisi gorulur.
+CREATE TABLE IF NOT EXISTS thresholds (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  symbol TEXT NOT NULL,
+  kind TEXT NOT NULL,              -- ALIM | STOP
+  price REAL NOT NULL,
+  reason TEXT,
+  status TEXT DEFAULT 'active',    -- active | replaced
+  created_at TEXT DEFAULT (datetime('now')),
+  hit_at TEXT                      -- nobetci uyarisinin gittigi an
 );
 `);
 
@@ -169,10 +182,10 @@ function deleteNote(id) {
 // ---- DECISIONS (sabah toplantisi kararlari, +/- takibi) ----
 function addDecision(d) {
   const info = db.prepare(`INSERT INTO decisions
-    (meeting_date, symbol, action, amount, stop_loss, take_profit, rationale)
-    VALUES (?,?,?,?,?,?,?)`)
+    (meeting_date, symbol, action, amount, stop_loss, take_profit, rationale, status)
+    VALUES (?,?,?,?,?,?,?,?)`)
     .run(d.meetingDate, d.symbol, d.action, d.amount || null,
-         d.stopLoss || null, d.takeProfit || null, d.rationale || '');
+         d.stopLoss || null, d.takeProfit || null, d.rationale || '', d.status || 'pending');
   return info.lastInsertRowid;
 }
 function getPendingDecisions() {
@@ -189,6 +202,37 @@ function getDecisionStats() {
   return db.prepare(`SELECT status, COUNT(*) AS n FROM decisions GROUP BY status`).all();
 }
 
+// ---- ESIKLER ----
+function getActiveThresholds() {
+  return db.prepare("SELECT * FROM thresholds WHERE status = 'active' ORDER BY symbol, kind").all();
+}
+function getThresholdHistory(symbol, kind) {
+  return db.prepare('SELECT * FROM thresholds WHERE symbol = ? AND kind = ? ORDER BY id').all(symbol, kind);
+}
+// Ayni fiyat tekrar gelirse eski kayit korunur (olusturma tarihi "esik ne zamandan
+// beri var" sorusu icin onemli). Farkli fiyat gelirse eskisi 'replaced' olur.
+// Donus: { id, previous } — previous, degisen eski esik (yoksa null).
+function setThreshold({ symbol, kind, price, reason }) {
+  const sym = String(symbol).toUpperCase();
+  const current = db.prepare("SELECT * FROM thresholds WHERE symbol = ? AND kind = ? AND status = 'active'").get(sym, kind);
+  if (current && Math.abs(current.price - price) < 0.005) return { id: current.id, previous: null };
+  const tx = db.transaction(() => {
+    if (current) db.prepare("UPDATE thresholds SET status = 'replaced' WHERE id = ?").run(current.id);
+    return db.prepare('INSERT INTO thresholds (symbol, kind, price, reason) VALUES (?,?,?,?)')
+      .run(sym, kind, price, reason || '').lastInsertRowid;
+  });
+  return { id: tx(), previous: current || null };
+}
+// Esik aktif kalir (komite yeni karar verene kadar gundemde durur);
+// hit_at yalnizca ayni esik icin tekrar tekrar uyari gitmesini engeller.
+function markThresholdHit(id) {
+  db.prepare("UPDATE thresholds SET hit_at = datetime('now') WHERE id = ? AND hit_at IS NULL").run(id);
+}
+function removeThresholdsFor(symbol) {
+  return db.prepare("UPDATE thresholds SET status = 'replaced' WHERE symbol = ? AND status = 'active'")
+    .run(String(symbol).toUpperCase()).changes;
+}
+
 module.exports = {
   loadMemory, saveMemory, appendMemory, isErrorEntry,
   loadTriggers, saveTriggers,
@@ -196,5 +240,6 @@ module.exports = {
   getPositions, upsertPosition, deletePosition,
   getWatchlist, addWatch, removeWatch,
   addNote, getNotes, deleteNote,
-  addDecision, getPendingDecisions, getAllDecisions, setDecisionStatus, getDecisionStats
+  addDecision, getPendingDecisions, getAllDecisions, setDecisionStatus, getDecisionStats,
+  getActiveThresholds, getThresholdHistory, setThreshold, markThresholdHit, removeThresholdsFor
 };

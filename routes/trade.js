@@ -67,7 +67,7 @@ router.post('/execute-trade', requireAuth, tradeLimiter, async (req, res) => {
     const quote = await fetchQuote(d.symbol);
     if (!quote?.price) return res.json({ ok: false, error: d.symbol + ' icin guncel fiyat alinamadi, emir iletilmedi.' });
 
-    const side = d.action === 'AL' ? 'buy' : 'sell';
+    const side = ['AL', 'KADEMELI AL'].includes(d.action) ? 'buy' : 'sell';
     const wholeQty = Math.floor(d.amount / quote.price);
     let order, orderDesc;
 

@@ -1,27 +1,40 @@
-// services/meeting.js — SABAH TOPLANTISI (otomatik, sunucu tarafinda)
-// Akis: pozisyonlar + izleme listesi -> canli veri -> 3 analist oyu ->
-// baskan (Claude) JSON konsensus -> decisions tablosuna 'pending' kayit ->
-// Telegram bildirimi. Kullanici + / - ile geri bildirim verir.
+// services/meeting.js — KOMITE TOPLANTISI (otomatik veya /toplanti ile)
+// Akis: pozisyonlar + izleme listesi + kasa + aktif esikler + karne -> canli veri
+// -> 3 analist oyu (sembol bazinda) -> baskan (Claude) JSON karar + esikler
+// -> decisions / thresholds tablolarina kayit -> Telegram bildirimi.
+// Islem gerektiren kararlar 'pending' kaydedilir, kullanici + / - ile isaretler;
+// TUT/BEKLE 'bilgi' olarak kaydedilir (karnede sayilir, geri bildirim beklenmez).
 // NOT: Bu toplanti HICBIR emir gondermez; Midas'ta uygulama tamamen kullanicida.
 
 const { callClaude } = require('../agents/claude');
 const { callGPT } = require('../agents/gpt');
 const { callGemini } = require('../agents/gemini');
-const { AGENT_SYSTEMS } = require('../agents/systems');
-const { getPositions, getWatchlist, addDecision, appendMemory, loadMemory, getNotes, getAllDecisions } = require('./storage');
+const { AGENT_SYSTEMS, CHAIR_SYSTEM } = require('../agents/systems');
+const {
+  getPositions, getWatchlist, addDecision, appendMemory, loadMemory, getNotes, getAllDecisions,
+  loadPortfolio, getActiveThresholds, getThresholdHistory, setThreshold, markThresholdHit
+} = require('./storage');
 const { getQuotesFor, formatQuote, resolveSymbols } = require('./marketData');
 const { getMacroData } = require('./macroData');
 const { getTechnicalData } = require('./technicalIndicators');
 const { getFundamentalData } = require('./fundamentalData');
 const { sendTelegramMessage } = require('./telegram');
-const { parseTradeJson } = require('../middleware/parseTradeJson');
 const { getNewsForTopic } = require('./newsData');
+const { scorecardSummary } = require('./scorecard');
 
-const MIDAS_STRATEGY = 'Gercek Midas portfoyu. Amac: mevcut pozisyonlari korumak/degerlendirmek ve izleme listesindeki firsatlari takip etmek. Kullanici islemleri Midas uzerinden elle yapar.';
+const MIDAS_STRATEGY = 'Gercek Midas portfoyu. Amac: uzun vadede portfoy degerini buyutmek; mevcut pozisyonlari degerlendirmek ve izleme listesindeki sirketleri dogru fiyattan almak. Kullanici islemleri Midas uzerinden elle yapar.';
+
+const ACTION_NEEDED = ['AL', 'KADEMELI AL', 'AZALT', 'SAT'];
+const VALID_ACTIONS = [...ACTION_NEEDED, 'TUT', 'BEKLE'];
 
 function todayTR() {
   return new Date().toLocaleDateString('tr-TR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 }
+function shortDate(sqliteUtc) {
+  return new Date(String(sqliteUtc).replace(' ', 'T') + 'Z')
+    .toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+const usd = n => '$' + Number(n).toFixed(2);
 
 // Model hata metnini (API hatasi, baglanti hatasi, bos yanit) gecerli oydan ayir
 function isAgentError(text) {
@@ -29,7 +42,30 @@ function isAgentError(text) {
   return /^Hata \((Claude|GPT|Gemini)\)/.test(t) || /baglanti hatasi/i.test(t) || t === 'Bos Yanit';
 }
 
-// Ayni anda iki toplanti calismasin (cift /toplanti, cron + elle tetikleme)
+// ALIM esigi: fiyat esigin altina indiyse gerceklesti. STOP: fiyat stop'un altina indiyse.
+function isThresholdMet(t, price) {
+  return price != null && price <= t.price;
+}
+
+// Baskanin JSON'u: { ozet, kararlar, esikler }. Eski format (dizi) da kabul edilir.
+function parseChair(raw) {
+  const cleaned = String(raw).replace(/```json|```/g, '').trim();
+  const tryParse = txt => { try { return JSON.parse(txt); } catch (e) { return null; } };
+  let obj = tryParse(cleaned);
+  if (!obj) {
+    const a = cleaned.indexOf('{'), b = cleaned.lastIndexOf('}');
+    if (a !== -1 && b > a) obj = tryParse(cleaned.slice(a, b + 1));
+  }
+  if (Array.isArray(obj)) obj = { ozet: '', kararlar: obj, esikler: [] };
+  if (!obj || typeof obj !== 'object') return null;
+  return {
+    ozet: String(obj.ozet || ''),
+    kararlar: Array.isArray(obj.kararlar) ? obj.kararlar : [],
+    esikler: Array.isArray(obj.esikler) ? obj.esikler : []
+  };
+}
+
+// Ayni anda iki toplanti calismasin (cift /toplanti, cron + elle tetikleme, nobetci)
 let meetingRunning = false;
 
 async function runMorningMeeting(customTopic) {
@@ -51,39 +87,49 @@ async function runMeetingInner(customTopic) {
   const watchlist = getWatchlist();
 
   if (!positions.length && !watchlist.length) {
-    await sendTelegramMessage('Sabah toplantisi atlandi: portfoy ve izleme listesi bos.\n/portfoy ve /izle komutlariyla ekleme yap.');
+    await sendTelegramMessage('Toplanti atlandi: portfoy ve izleme listesi bos.\n/portfoy ve /izle komutlariyla ekleme yap.');
     return;
   }
 
-  // 1) Canli veri: fiyatlar + makro ortam + pozisyonlarin teknik gostergeleri
+  // 1) Canli veri: fiyatlar + makro ortam + her sembolun teknik ve temel verisi.
   // Gundemde adi gecen sirketler (orn. "SpaceX" -> SPCX) canli veriyle eklenir;
   // aksi halde modeller eski egitim bilgisine doner.
   const topicSymbols = customTopic ? await resolveSymbols(customTopic) : [];
-  const symbols = [...topicSymbols.map(t => t.symbol), ...positions.map(p => p.symbol), ...watchlist];
-  const techSymbols = [...new Set(symbols.map(s => s.toUpperCase()))]; // her sembol icin teknik + temel veri
+  const thresholds = getActiveThresholds();
+  const symbols = [...new Set([
+    ...topicSymbols.map(t => t.symbol), ...positions.map(p => p.symbol), ...watchlist, ...thresholds.map(t => t.symbol)
+  ].map(s => s.toUpperCase()))];
   const newsQuery = customTopic || 'stock market economy Fed';
-  const [quotes, macroData, techResults, fundResults, topicNews] = await Promise.all([
+  const [quotes, macroData, techResults, fundResults, topicNews, scoreText] = await Promise.all([
     getQuotesFor(symbols),
     getMacroData(),
-    Promise.all(techSymbols.map(s => getTechnicalData(s))),
-    // Temel analist (Gemini) bilanco verisi olmadan eski bilgisine donmesin
-    Promise.all(techSymbols.map(s => getFundamentalData(s))),
-    getNewsForTopic(newsQuery).catch(() => ({ articles: [] }))
+    Promise.all(symbols.map(s => getTechnicalData(s))),
+    Promise.all(symbols.map(s => getFundamentalData(s))),
+    getNewsForTopic(newsQuery).catch(() => ({ articles: [] })),
+    scorecardSummary()
   ]);
-  const quoteMap = Object.fromEntries(quotes.map(q => [q.symbol, q]));
+  const quoteMap = Object.fromEntries(quotes.map(q => [q.symbol.toUpperCase(), q]));
+  const priceOf = s => quoteMap[String(s).toUpperCase()]?.price ?? null;
   const techText = techResults.filter(Boolean).join('\n\n');
   const fundText = fundResults.filter(Boolean).join('\n\n');
 
+  // Kasa ve portfoy agirliklari — komite gercek nakdi bilmeden boyut onermesin
+  const cash = Number(loadPortfolio('midas').cash) || 0;
+  const posValue = positions.reduce((sum, p) => sum + p.qty * (priceOf(p.symbol) ?? p.avg_cost), 0);
+  const totalValue = cash + posValue;
+  const cashText = `\n\n[KASA]\n• Nakit: ${usd(cash)}\n• Pozisyonlarin guncel degeri: ${usd(posValue)}\n• Toplam portfoy: ${usd(totalValue)}\n` +
+    `• Tek pozisyon ust siniri (%25): ${usd(totalValue * 0.25)}`;
+
   const posText = positions.length
     ? positions.map(p => {
-        const q = quoteMap[p.symbol];
-        const cur = q ? q.price : null;
+        const cur = priceOf(p.symbol);
         const pnl = cur ? (((cur - p.avg_cost) / p.avg_cost) * 100).toFixed(2) + '%' : 'N/A';
-        return `• ${p.symbol}: ${p.qty} adet @ $${p.avg_cost} | Guncel: ${cur ? '$' + cur : 'N/A'} | K/Z: ${pnl}`;
+        const weight = cur && totalValue ? ((p.qty * cur) / totalValue * 100).toFixed(1) + '%' : 'N/A';
+        return `• ${p.symbol}: ${p.qty} adet @ $${p.avg_cost} | Guncel: ${cur ? '$' + cur : 'N/A'} | K/Z: ${pnl} | Portfoy payi: ${weight}`;
       }).join('\n')
     : '(pozisyon yok)';
   const watchText = watchlist.length
-    ? watchlist.map(s => quoteMap[s] ? formatQuote(quoteMap[s]) : '► ' + s + ': veri yok').join('\n')
+    ? watchlist.map(s => quoteMap[s.toUpperCase()] ? formatQuote(quoteMap[s.toUpperCase()]) : '► ' + s + ': veri yok').join('\n')
     : '(izleme listesi bos)';
 
   const topicText = topicSymbols.length
@@ -93,6 +139,22 @@ async function runMeetingInner(customTopic) {
           (q ? formatQuote(q).replace(/^► /, '') : 'fiyat alinamadi');
       }).join('\n')
     : '';
+
+  // Aktif esikler + gecmisi: komite esigi gecmiste nasil kaydirdigini gorsun
+  const thresholdText = thresholds.length
+    ? '\n\n[AKTIF ESIKLER — KOMITENIN DAHA ONCE TAAHHUT ETTIGI FIYATLAR]\n' + thresholds.map(t => {
+        const cur = priceOf(t.symbol);
+        const met = isThresholdMet(t, cur);
+        const hist = getThresholdHistory(t.symbol, t.kind);
+        const histText = hist.length > 1
+          ? ' | Esik gecmisi: ' + hist.map(h => usd(h.price) + ' (' + shortDate(h.created_at) + ')').join(' → ')
+          : '';
+        const label = t.kind === 'ALIM' ? 'ALIM esigi (bu fiyatin altinda al)' : 'STOP (bu fiyatin altinda cik)';
+        return `• ${t.symbol} ${label}: ${usd(t.price)}, ${shortDate(t.created_at)} tarihinden beri | Guncel: ${cur != null ? usd(cur) : 'N/A'} | ` +
+          (met ? `DURUM: GERCEKLESTI (fiyat esigin %${((t.price - cur) / t.price * 100).toFixed(1)} altinda)` : 'DURUM: henuz gerceklesmedi') +
+          (t.reason ? ` | Esik gerekcesi: ${t.reason}` : '') + histText;
+      }).join('\n')
+    : '\n\n[AKTIF ESIKLER]\n(henuz kayitli esik yok — bu toplantida her hisse icin belirleyin)';
 
   // Kalici notlar (/not) — kullanicinin stratejik hatirlatmalari, HER toplantida verilir
   const notes = getNotes();
@@ -109,12 +171,14 @@ async function runMeetingInner(customTopic) {
     : '';
 
   // Son kararlar + kullanicinin +/- geri bildirimi
-  const stMap = { applied: 'UYGULANDI', rejected: 'REDDEDILDI', pending: 'BEKLIYOR' };
+  const stMap = { applied: 'UYGULANDI', rejected: 'REDDEDILDI', pending: 'BEKLIYOR', bilgi: 'BILGI' };
   const recentDecs = getAllDecisions().slice(0, 20);
   const decText = recentDecs.length
     ? '\n\n[SON KOMITE KARARLARI VE KULLANICI GERI BILDIRIMI]\n' +
       recentDecs.map(d => '• #' + d.id + ' ' + d.action + ' ' + d.symbol + ' -> ' + (stMap[d.status] || d.status)).join('\n')
     : '';
+
+  const scoreBlock = scoreText ? '\n\n[KOMITE KARNESI — GECMIS KARARLARIN SONUCU]\n' + scoreText : '';
 
   // Guncel haber basliklari
   const newsText = (topicNews.articles || []).length
@@ -122,15 +186,21 @@ async function runMeetingInner(customTopic) {
       topicNews.articles.map(a => '• [' + (a.date || '') + '] ' + a.title + ' (' + (a.source || '') + ')').join('\n')
     : '';
 
-  const context = `[TARIH] ${todayTR()}\n\n[MEVCUT PORTFOY - MIDAS]\n${posText}\n\n[IZLEME LISTESI]\n${watchText}` +
-    topicText +
+  const context = `[TARIH] ${todayTR()}` + cashText +
+    `\n\n[MEVCUT PORTFOY - MIDAS]\n${posText}\n\n[IZLEME LISTESI]\n${watchText}` +
+    topicText + thresholdText +
     (macroData || '') +
     (techText ? '\n\n[TEKNIK ANALIZ]\n' + techText : '') +
     (fundText ? '\n\n[TEMEL FINANSAL VERILER]\n' + fundText : '') +
-    notesText + memText + decText + newsText;
+    notesText + memText + decText + scoreBlock + newsText;
+
+  const agenda = 'Gundemdeki semboller: ' + symbols.join(', ') + '.';
   const task = customTopic
-    ? 'OZEL GUNDEM: "' + customTopic + '"\nBu konuyu mevcut portfoy ve izleme listesi baglaminda degerlendirin. Ilgiliyse somut oneri cikarin (en fazla 2); degilse BEKLE deyin.'
-    : 'Haftalik portfoy degerlendirmesi (uzun vadeli strateji): mevcut pozisyonlarin uzun vadeli tezleri hala gecerli mi? Izleme listesinde degerleme acisindan cazip hale gelen var mi? Sik islem onerme; guclu gerekce yoksa TUT/BEKLE de. En fazla 2 somut oneri.';
+    ? 'OZEL GUNDEM: "' + customTopic + '"\nBu konuyu mevcut portfoy, kasa ve izleme listesi baglaminda degerlendirin. ' + agenda +
+      ' Her sembol icin oy formatini doldurun.'
+    : 'Haftalik portfoy degerlendirmesi (uzun vadeli strateji): mevcut pozisyonlarin tezleri hala gecerli mi? ' +
+      'Izleme listesinde degerleme acisindan alinabilir hale gelen var mi? Gerceklesmis esikler var mi? ' + agenda +
+      ' Her sembol icin oy formatini doldurun.';
 
   // 2) Uc analistin oyu (phase 4 = sablonlu oy)
   const votes = [];
@@ -155,56 +225,69 @@ async function runMeetingInner(customTopic) {
     return;
   }
 
-  // 3) Baskan konsensusu (JSON)
-  const chairSystem = 'Sen simule edilmis bir yatirim komitesinin baskanisın. Gorevin analist oylarini sentezleyip komite gorusu cikarmak; emir vermek degil, nihai karar kullaniciya aittir.\nKURAL: Yanitini SADECE JSON dizisi olarak ver, markdown kullanma. En fazla 2 oneri. Oneri yoksa bos dizi [] don.';
+  // 3) Baskan karari (JSON: ozet + kararlar + esikler)
   const chairPrompt = 'Analist oylari:\n\n' + validVotes.map(v => v.name + ':\n' + v.text).join('\n\n---\n\n') +
-    '\n\nJSON formati:\n[{"action":"AL/SAT/TUT/BEKLE","symbol":"AAPL","amount":100,"stopLoss":170.0,"takeProfit":200.0,"rationale":"kisa gerekce"}]';
-  const rawConsensus = await callClaude([{ role: 'user', content: chairPrompt }], chairSystem, context);
+    '\n\n' + agenda + ' Komite kararini istenen JSON yapisinda yaz.';
+  const rawConsensus = await callClaude([{ role: 'user', content: chairPrompt }], CHAIR_SYSTEM, context);
   if (isAgentError(rawConsensus)) {
     await sendTelegramMessage('⚠️ Toplanti tamamlanamadi: baskan (Claude) hata verdi.\n' + String(rawConsensus).slice(0, 300));
     return;
   }
+  const chair = parseChair(rawConsensus);
+  if (!chair) console.error('[TOPLANTI] Baskan JSON okunamadi:', String(rawConsensus).slice(0, 300));
+  const { ozet = '', kararlar = [], esikler = [] } = chair || {};
 
-  // 4) JSON'u coz, kararlari kaydet
-  let decisions = [];
-  try {
-    const cleaned = rawConsensus.replace(/```json|```/g, '').trim();
-    decisions = JSON.parse(cleaned);
-    if (!Array.isArray(decisions)) decisions = [decisions];
-  } catch (e) {
-    const p = parseTradeJson(rawConsensus);
-    if (p.ok) decisions = [p.data];
-  }
-
+  // 4) Kararlari kaydet
   const meetingDate = todayTR();
-  const savedIds = [];
-  for (const d of decisions) {
-    if (!d?.action) continue;
+  const saved = [];
+  for (const d of kararlar) {
+    const action = String(d?.action || '').toUpperCase().trim();
+    if (!VALID_ACTIONS.includes(action) || !d.symbol) continue;
     const id = addDecision({
-      meetingDate, symbol: d.symbol || 'N/A', action: d.action,
+      meetingDate, symbol: String(d.symbol).toUpperCase(), action,
       amount: d.amount, stopLoss: d.stopLoss, takeProfit: d.takeProfit,
-      rationale: d.rationale
+      rationale: d.rationale,
+      status: ACTION_NEEDED.includes(action) ? 'pending' : 'bilgi'
     });
-    savedIds.push({ id, ...d });
+    saved.push({ id, ...d, action, symbol: String(d.symbol).toUpperCase() });
   }
 
-  // 5) Hafizaya yaz (hata filtresi appendMemory icinde)
+  // 5) Esikleri kaydet; asagi kaydirilan ALIM esiklerini isaretle
+  const thresholdChanges = [];
+  for (const e of esikler) {
+    const kind = String(e?.kind || '').toUpperCase();
+    const price = Number(e?.price);
+    if (!['ALIM', 'STOP'].includes(kind) || !e.symbol || !(price > 0)) continue;
+    if (!symbols.includes(String(e.symbol).toUpperCase())) continue; // gundem disi sembole esik konmaz
+    const { id, previous } = setThreshold({ symbol: e.symbol, kind, price, reason: e.esik_gerekcesi });
+    // Konuldugu anda zaten gerceklesmis esik nobetciyi tetiklemesin (her dakika
+    // yeni toplanti dongusu olusmasin); komite bu durumu zaten bu toplantida gordu.
+    if (isThresholdMet({ price }, priceOf(e.symbol))) markThresholdHit(id);
+    thresholdChanges.push({ symbol: String(e.symbol).toUpperCase(), kind, price, previous, reason: e.esik_gerekcesi });
+  }
+
+  // 6) Hafizaya yaz (hata filtresi appendMemory icinde)
   appendMemory({
-    topic: customTopic ? 'Toplanti: ' + customTopic : 'Sabah portfoy toplantisi',
+    topic: customTopic ? 'Toplanti: ' + customTopic : 'Haftalik portfoy toplantisi',
     portfolioId: 'midas',
     ozet: Object.fromEntries(validVotes.map(v => [v.name.toLowerCase(), String(v.text)])),
-    karar: JSON.stringify(decisions),
+    karar: JSON.stringify({ ozet, kararlar, esikler }),
     baskan: String(rawConsensus),
     date: meetingDate
   });
 
-  // 6) Telegram bildirimi
+  // 7) Telegram bildirimi
   const failNote = failed.length
     ? '\n\n⚠️ Bu toplantida hata veren analist(ler): ' + failed.map(v => v.name).join(', ') + ' — oylamaya katilmadi.'
     : '';
-  let msg = `🌅 ${customTopic ? 'TOPLANTI: ' + customTopic.toUpperCase() : 'SABAH TOPLANTISI'} — ${meetingDate}\n\n${posText === '(pozisyon yok)' ? '' : 'PORTFOY:\n' + posText + '\n\n'}`;
-  if (savedIds.length) {
-    msg += 'KOMITE ONERILERI:\n' + savedIds.map(d =>
+  let msg = `🌅 ${customTopic ? 'TOPLANTI: ' + customTopic.toUpperCase() : 'HAFTALIK TOPLANTI'} — ${meetingDate}\n` +
+    `Kasa: ${usd(cash)} | Toplam portfoy: ${usd(totalValue)}\n`;
+  if (ozet) msg += `\nKOMITE GORUSU:\n${ozet}\n`;
+
+  const actions = saved.filter(d => ACTION_NEEDED.includes(d.action));
+  const others = saved.filter(d => !ACTION_NEEDED.includes(d.action));
+  if (actions.length) {
+    msg += '\n🔔 ISLEM ONERILERI:\n' + actions.map(d =>
       `#${d.id} ${d.action} ${d.symbol}` +
       (d.amount ? ` ($${d.amount})` : '') +
       (d.stopLoss ? ` | Stop: $${d.stopLoss}` : '') +
@@ -212,12 +295,29 @@ async function runMeetingInner(customTopic) {
       `\n   Gerekce: ${d.rationale || '-'}`
     ).join('\n\n');
     msg += '\n\nUyguladinsa + yaz, uygulamadinsa - yaz.' +
-      (savedIds.length > 1 ? ' (birden fazla oneri: +' + savedIds[0].id + ' gibi numarayla)' : '');
+      (actions.length > 1 ? ' (birden fazla oneri: +' + actions[0].id + ' gibi numarayla)' : '');
   } else {
-    msg += 'Komite bugun somut oneri cikarmadi (BEKLE).\n\nHam ozet:\n' + String(rawConsensus);
+    msg += '\nIslem onerisi yok.';
   }
+  if (others.length) {
+    msg += '\n\nDIGER HISSELER:\n' + others.map(d => `• ${d.action} ${d.symbol}: ${d.rationale || '-'}`).join('\n');
+  }
+  if (thresholdChanges.length) {
+    msg += '\n\n🎯 ESIKLER:\n' + thresholdChanges.map(c => {
+      const label = c.kind === 'ALIM' ? 'alim <' : 'stop <';
+      let line = `• ${c.symbol} ${label} ${usd(c.price)}`;
+      if (c.previous) {
+        const down = c.price < c.previous.price;
+        line += ` (onceki ${usd(c.previous.price)}${c.kind === 'ALIM' && down ? ' ⚠️ ASAGI KAYDIRILDI' : ''})`;
+        if (c.kind === 'ALIM' && down) line += `\n   Gerekce: ${c.reason || '(yazilmadi)'}`;
+      }
+      return line;
+    }).join('\n');
+  }
+  if (!chair) msg += '\n\n⚠️ Baskanin cevabi okunamadi, ham metin:\n' + String(rawConsensus);
+  msg += '\n\nAnalistlerin tam metni: /detay';
   await sendTelegramMessage(msg + failNote);
-  console.log('[TOPLANTI] Tamamlandi. Oneri sayisi:', savedIds.length);
+  console.log('[TOPLANTI] Tamamlandi. Islem onerisi:', actions.length, '| Esik:', thresholdChanges.length);
 }
 
-module.exports = { runMorningMeeting };
+module.exports = { runMorningMeeting, isThresholdMet };

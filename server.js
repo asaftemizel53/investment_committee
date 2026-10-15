@@ -66,7 +66,7 @@ setTimeout(() => {
   checkDataSources().catch(e => console.error('[SAGLIK] Hata:', e.message));
 }, 30000);
 
-startSentinel();
+startSentinel((topic) => runMorningMeeting(topic).catch(e => console.error('[TOPLANTI] Hata:', e.message)));
 startTelegramListener(
   (topic) => runMorningMeeting(topic).catch(e => console.error('[TOPLANTI] Hata:', e.message)),
   () => checkDataSources({ notifyOnSuccess: true }).catch(e => console.error('[SAGLIK] Hata:', e.message))

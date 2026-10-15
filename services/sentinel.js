@@ -1,8 +1,11 @@
 // services/sentinel.js — Nobetci sistemi.
 // Iyilestirme: ABD piyasasi kapaliyken (hafta sonu + gece) Yahoo'ya
 // gereksiz istek atmiyor. Fiyat kontrolu piyasa saatlerinde her 60 sn.
+// Komite esikleri (thresholds tablosu): ALIM veya STOP esigi gerceklesince
+// Telegram'a uyari gider ve komite o gundemle otomatik toplanir. Her esik
+// icin yalnizca bir kez (hit_at bos iken) tetiklenir.
 
-const { loadTriggers, saveTriggers } = require('./storage');
+const { loadTriggers, saveTriggers, getActiveThresholds, markThresholdHit } = require('./storage');
 const { sendTelegramMessage } = require('./telegram');
 const { fetchQuote } = require('./marketData');
 
@@ -16,9 +19,29 @@ function isUsMarketLikelyOpen() {
   return mins >= 9 * 60 + 30 && mins <= 16 * 60;
 }
 
-function startSentinel() {
+async function checkThresholds(runMeeting) {
+  const pending = getActiveThresholds().filter(t => !t.hit_at);
+  const hits = [];
+  for (const t of pending) {
+    const q = await fetchQuote(t.symbol);
+    if (q?.price && q.price <= t.price) hits.push({ ...t, current: q.price });
+  }
+  if (!hits.length) return;
+  hits.forEach(h => markThresholdHit(h.id));
+  const lines = hits.map(h => h.kind === 'ALIM'
+    ? `• ${h.symbol} ALIM esigi gerceklesti: $${h.current} (esik $${h.price})`
+    : `• ${h.symbol} STOP seviyesinin altina indi: $${h.current} (stop $${h.price})`);
+  await sendTelegramMessage('🎯 ESIK GERCEKLESTI\n' + lines.join('\n') +
+    (runMeeting ? '\n\nKomite bu gundemle simdi toplaniyor, sonuc birazdan gelecek...' : ''));
+  if (runMeeting) {
+    runMeeting('Esik gerceklesti: ' + hits.map(h => `${h.symbol} ${h.kind} $${h.price} (guncel $${h.current})`).join(', '));
+  }
+}
+
+function startSentinel(runMeeting) {
   setInterval(async () => {
     if (!isUsMarketLikelyOpen()) return;
+    await checkThresholds(runMeeting).catch(e => console.error('[NOBETCI] Esik kontrolu hatasi:', e.message));
     const triggers = loadTriggers();
     let updated = false;
     for (const t of triggers) {
