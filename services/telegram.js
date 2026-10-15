@@ -7,6 +7,8 @@
 //   /izlesil SEMBOL               -> izleme listesinden cikar
 //   /liste                        -> portfoy + izleme listesi
 //   /toplanti                     -> sabah toplantisini elle tetikle
+//   /karne                        -> gecmis kararlarin dogruluk karnesi
+//   /detay                        -> son toplantida analistlerin tam yazdiklari
 //   + veya +2                     -> bekleyen karari UYGULANDI isaretle
 //   - veya -2                     -> bekleyen karari REDDEDILDI isaretle
 
@@ -17,7 +19,8 @@ const {
   loadPortfolio, savePortfolio
 } = require('./storage');
 const { fetchQuote } = require('./marketData');
-const { addNote, getNotes, deleteNote } = require('./storage');
+const { addNote, getNotes, deleteNote, loadMemory } = require('./storage');
+const { buildScorecard } = require('./scorecard');
 
 // Sembol dogrulama: Yahoo'da fiyati var mi? 'zorla' ile atlanabilir.
 async function validateSymbol(sym) {
@@ -163,6 +166,16 @@ async function handleCommand(text, runMeeting, runHealth) {
       }
       return 'Toplanti fonksiyonu bagli degil.';
     }
+    case '/karne':
+      return await buildScorecard();
+    case '/detay': {
+      const last = loadMemory().slice(-1)[0];
+      if (!last) return 'Henuz kayitli toplanti yok.';
+      const parts = Object.entries(last.ozet || {}).map(([k, v]) => '━━ ' + k.toUpperCase() + ' ━━\n' + v);
+      if (last.baskan) parts.push('━━ BASKAN (CLAUDE) KARARI ━━\n' + last.baskan);
+      return '🗣 SON TOPLANTI — ' + (last.date || '') + '\n' + (last.topic || '') + '\n\n' + parts.join('\n\n') +
+        (last.baskan ? '' : '\n\n(Bu toplanti eski surumde kaydedildi; metinler 300 karakterde kesilmisti.)');
+    }
     case '/not': {
       const text = args.join(' ').trim();
       if (!text) return 'Kullanim: /not Iran-ABD ateskesi ilan edildi, temkinli ol';
@@ -182,7 +195,7 @@ async function handleCommand(text, runMeeting, runHealth) {
     }
     case '/yardim':
     case '/start':
-      return 'Komutlar:\n/portfoy SEMBOL ADET MALIYET (alim, kasadan duser)\n/sil SEMBOL ADET FIYAT (satim, kasaya eklenir)\n/izle SEMBOL\n/izlesil SEMBOL\n/liste\n/toplanti [konu]\n/not METIN (her toplantida komiteye iletilir)\n/notlar\n/notsil NUMARA\n/saglik (veri kaynaklarini test et)\n+ / - (karar geri bildirimi, coklu icin +ID)';
+      return 'Komutlar:\n/portfoy SEMBOL ADET MALIYET (alim, kasadan duser)\n/sil SEMBOL ADET FIYAT (satim, kasaya eklenir)\n/izle SEMBOL\n/izlesil SEMBOL\n/liste\n/toplanti [konu]\n/not METIN (her toplantida komiteye iletilir)\n/notlar\n/notsil NUMARA\n/saglik (veri kaynaklarini test et)\n/karne (gecmis kararlarin dogruluk karnesi)\n/detay (son toplantida analistlerin tam yazdiklari)\n+ / - (karar geri bildirimi, coklu icin +ID)';
     default:
       return null; // taninmayan mesajlari sessizce gec
   }

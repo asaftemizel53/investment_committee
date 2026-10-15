@@ -51,7 +51,7 @@ async function getDynamicTickerData(history) {
 
 // Yeni: sabah toplantisi icin sembol listesine toplu veri
 async function getQuotesFor(symbols) {
-  const uniq = [...new Set(symbols.map(s => s.toUpperCase()))].slice(0, 15);
+  const uniq = [...new Set(symbols.map(s => s.toUpperCase()))];
   const quotes = (await Promise.all(uniq.map(fetchQuote))).filter(Boolean);
   return quotes;
 }

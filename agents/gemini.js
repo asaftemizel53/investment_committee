@@ -7,7 +7,7 @@ async function callGemini(prompt, system) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: merged }] }],
-        generationConfig: { maxOutputTokens: 8192 }
+        generationConfig: { maxOutputTokens: 16384 }
       })
     });
     const d = await r.json();

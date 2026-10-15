@@ -8,7 +8,7 @@ async function callGPT(messages, system) {
       },
       body: JSON.stringify({
         model: 'gpt-6-astra',
-        max_completion_tokens: 4096,
+        max_completion_tokens: 16000,
         messages: [{ role: 'system', content: system }, ...messages]
       })
     });

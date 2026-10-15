@@ -18,7 +18,7 @@ async function callClaude(messages, staticSystem, dynamicContext = '') {
       },
       body: JSON.stringify({
         model: 'claude-fable-5-1',
-        max_tokens: 4096,
+        max_tokens: 16000,
         system: [{ type: 'text', text: staticSystem, cache_control: { type: 'ephemeral' } }],
         messages: finalMessages
       })

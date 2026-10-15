@@ -75,7 +75,7 @@ router.post('/speak', requireAuth, async (req, res) => {
   ].filter(Boolean).join('');
 
   const fullPrompt = prompt + (history?.length
-    ? '\n\n[GECMIS]\n' + history.slice(-15).map(h => h.name + ': ' + h.text).join('\n') : '');
+    ? '\n\n[GECMIS]\n' + history.map(h => h.name + ': ' + h.text).join('\n') : '');
 
   try {
     let text;

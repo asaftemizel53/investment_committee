@@ -60,7 +60,7 @@ async function runMeetingInner(customTopic) {
   // aksi halde modeller eski egitim bilgisine doner.
   const topicSymbols = customTopic ? await resolveSymbols(customTopic) : [];
   const symbols = [...topicSymbols.map(t => t.symbol), ...positions.map(p => p.symbol), ...watchlist];
-  const techSymbols = symbols.slice(0, 4); // token maliyetini sinirla
+  const techSymbols = [...new Set(symbols.map(s => s.toUpperCase()))]; // her sembol icin teknik + temel veri
   const newsQuery = customTopic || 'stock market economy Fed';
   const [quotes, macroData, techResults, fundResults, topicNews] = await Promise.all([
     getQuotesFor(symbols),
@@ -102,15 +102,15 @@ async function runMeetingInner(customTopic) {
 
   // Gecmis toplantilarin ozeti — agent'lar cagrilar arasinda hicbir sey hatirlamaz,
   // bu yuzden son toplantilar her seferinde geri beslenir
-  const recentMem = loadMemory().slice(-5);
+  const recentMem = loadMemory().slice(-10);
   const memText = recentMem.length
     ? '\n\n[GECMIS TOPLANTILAR — SON ' + recentMem.length + ' OZET]\n' +
-      recentMem.map(m => '• ' + (m.date || '') + ' | ' + (m.topic || '') + ': ' + String(m.karar || '').slice(0, 200)).join('\n')
+      recentMem.map(m => '• ' + (m.date || '') + ' | ' + (m.topic || '') + ': ' + String(m.karar || '')).join('\n')
     : '';
 
   // Son kararlar + kullanicinin +/- geri bildirimi
   const stMap = { applied: 'UYGULANDI', rejected: 'REDDEDILDI', pending: 'BEKLIYOR' };
-  const recentDecs = getAllDecisions().slice(0, 5);
+  const recentDecs = getAllDecisions().slice(0, 20);
   const decText = recentDecs.length
     ? '\n\n[SON KOMITE KARARLARI VE KULLANICI GERI BILDIRIMI]\n' +
       recentDecs.map(d => '• #' + d.id + ' ' + d.action + ' ' + d.symbol + ' -> ' + (stMap[d.status] || d.status)).join('\n')
@@ -119,7 +119,7 @@ async function runMeetingInner(customTopic) {
   // Guncel haber basliklari
   const newsText = (topicNews.articles || []).length
     ? '\n\n[GUNCEL HABER BASLIKLARI: ' + newsQuery + ']\n' +
-      topicNews.articles.slice(0, 5).map(a => '• [' + (a.date || '') + '] ' + a.title + ' (' + (a.source || '') + ')').join('\n')
+      topicNews.articles.map(a => '• [' + (a.date || '') + '] ' + a.title + ' (' + (a.source || '') + ')').join('\n')
     : '';
 
   const context = `[TARIH] ${todayTR()}\n\n[MEVCUT PORTFOY - MIDAS]\n${posText}\n\n[IZLEME LISTESI]\n${watchText}` +
@@ -192,8 +192,9 @@ async function runMeetingInner(customTopic) {
   appendMemory({
     topic: customTopic ? 'Toplanti: ' + customTopic : 'Sabah portfoy toplantisi',
     portfolioId: 'midas',
-    ozet: Object.fromEntries(validVotes.map(v => [v.name.toLowerCase(), String(v.text).slice(0, 300)])),
-    karar: JSON.stringify(decisions).slice(0, 500),
+    ozet: Object.fromEntries(validVotes.map(v => [v.name.toLowerCase(), String(v.text)])),
+    karar: JSON.stringify(decisions),
+    baskan: String(rawConsensus),
     date: meetingDate
   });
 
@@ -213,7 +214,7 @@ async function runMeetingInner(customTopic) {
     msg += '\n\nUyguladinsa + yaz, uygulamadinsa - yaz.' +
       (savedIds.length > 1 ? ' (birden fazla oneri: +' + savedIds[0].id + ' gibi numarayla)' : '');
   } else {
-    msg += 'Komite bugun somut oneri cikarmadi (BEKLE).\n\nHam ozet:\n' + String(rawConsensus).slice(0, 800);
+    msg += 'Komite bugun somut oneri cikarmadi (BEKLE).\n\nHam ozet:\n' + String(rawConsensus);
   }
   await sendTelegramMessage(msg + failNote);
   console.log('[TOPLANTI] Tamamlandi. Oneri sayisi:', savedIds.length);
