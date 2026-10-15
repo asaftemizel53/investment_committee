@@ -8,7 +8,7 @@ const { fetchQuote } = require('./marketData');
 const { getMacroData } = require('./macroData');
 const { getFundamentalData } = require('./fundamentalData');
 const { getTechnicalData } = require('./technicalIndicators');
-const { getNewsForSymbol } = require('./newsData');
+const { fetchYahooNews, fetchGoogleNews, fetchNewsApi } = require('./newsData');
 const { sendTelegramMessage } = require('./telegram');
 
 async function checkDataSources({ notifyOnSuccess = false } = {}) {
@@ -26,11 +26,15 @@ async function checkDataSources({ notifyOnSuccess = false } = {}) {
   const fund = await getFundamentalData('AAPL');
   results.push({ name: 'Temel veri — Gemini (bilanco)', ok: !!fund });
 
+  // Haberler: Yahoo + Google ana kaynak; son 2 gunde haber yoksa bayat sayilir
+  const fresh = list => list.length > 0 && list.some(a => Date.now() - a.ts < 2 * 24 * 3600 * 1000);
+  const [yNews, gNews] = await Promise.all([fetchYahooNews('AAPL', 5), fetchGoogleNews('stock market', 5)]);
+  results.push({ name: 'Haberler (Yahoo Finance)', ok: fresh(yNews) });
+  results.push({ name: 'Haberler (Google News)', ok: fresh(gNews) });
+  // NewsAPI yalnizca yedek: anahtar yoksa hata sayilmaz
   if (process.env.NEWS_API_KEY) {
-    const news = await getNewsForSymbol('AAPL');
-    results.push({ name: 'Haberler (NewsAPI)', ok: !!news });
-  } else {
-    results.push({ name: 'Haberler (NewsAPI)', ok: false, note: 'NEWS_API_KEY tanimsiz' });
+    const nNews = await fetchNewsApi('stock market', 5);
+    results.push({ name: 'Haberler (NewsAPI, yedek)', ok: nNews.length > 0 });
   }
 
   const dead = results.filter(r => !r.ok);

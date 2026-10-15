@@ -282,9 +282,11 @@ async function fetchNews(query) {
       status.textContent='Haber yok'; status.className='news-status error';
       return;
     }
+    // Dis kaynakli basliklar HTML olarak yorumlanmasin
+    const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     list.innerHTML = newsArticles.map(a=>{
       const date = a.date || '';
-      return `<div class="news-item"><div class="news-item-title">${a.title||''}</div><div class="news-item-meta">${a.source||''} · ${date}</div></div>`;
+      return `<div class="news-item"><div class="news-item-title">${esc(a.title)}</div><div class="news-item-meta">${esc(a.source)} · ${esc(date)}</div></div>`;
     }).join('');
     status.textContent=`${newsArticles.length} haber yüklendi`; status.className='news-status';
   } catch(e) {
